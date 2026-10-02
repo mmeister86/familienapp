@@ -20,6 +20,7 @@ import type * as lib_pin from "../lib/pin.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_validators from "../lib/validators.js";
+import type * as overview from "../overview.js";
 import type * as points from "../points.js";
 import type * as rewards from "../rewards.js";
 import type * as seed from "../seed.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   "lib/recurrence": typeof lib_recurrence;
   "lib/tokens": typeof lib_tokens;
   "lib/validators": typeof lib_validators;
+  overview: typeof overview;
   points: typeof points;
   rewards: typeof rewards;
   seed: typeof seed;
