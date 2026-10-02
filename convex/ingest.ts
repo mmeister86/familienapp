@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internalMutation } from "./_generated/server";
-import { addDays, todayBerlin } from "./lib/dates";
+import { addDays, isValidDateString, todayBerlin } from "./lib/dates";
 import { briefingFields, childSnapshotFields } from "./lib/validators";
 
 // Briefings older than this (measured by the day they are about) are deleted.
@@ -12,6 +12,24 @@ export const upsertChildSnapshot = internalMutation({
   args: childSnapshotFields,
   returns: v.null(),
   handler: async (ctx, args) => {
+    if (args.days.length !== 7) {
+      throw new ConvexError("days must contain exactly 7 entries");
+    }
+    for (const day of args.days) {
+      if (!isValidDateString(day.date)) {
+        throw new ConvexError(`Invalid day date: ${day.date}`);
+      }
+    }
+    for (const homework of args.homework) {
+      if (!isValidDateString(homework.dueDate)) {
+        throw new ConvexError(`Invalid homework dueDate: ${homework.dueDate}`);
+      }
+    }
+    for (const exam of args.exams) {
+      if (!isValidDateString(exam.date)) {
+        throw new ConvexError(`Invalid exam date: ${exam.date}`);
+      }
+    }
     const child = await ctx.db
       .query("users")
       .withIndex("by_slug", (q) => q.eq("slug", args.childSlug))
@@ -38,6 +56,9 @@ export const upsertBriefing = internalMutation({
   args: briefingFields,
   returns: v.null(),
   handler: async (ctx, args) => {
+    if (!isValidDateString(args.date)) {
+      throw new ConvexError(`Invalid briefing date: ${args.date}`);
+    }
     const existing = await ctx.db
       .query("briefings")
       .withIndex("by_date_kind", (q) =>

@@ -1,8 +1,8 @@
 import { httpRouter } from "convex/server";
-import type { Infer } from "convex/values";
+import { ConvexError, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import { bearerToken, timingSafeEqual } from "./lib/tokens";
+import { isAuthorizedHeader } from "./lib/tokens";
 import {
   briefingValidator,
   childSnapshotValidator,
@@ -11,7 +11,10 @@ import {
 const http = httpRouter();
 
 function unauthorized(): Response {
-  return new Response("Unauthorized", { status: 401 });
+  return new Response("Unauthorized", {
+    status: 401,
+    headers: { "WWW-Authenticate": "Bearer" },
+  });
 }
 
 function badRequest(message: string): Response {
@@ -21,12 +24,10 @@ function badRequest(message: string): Response {
 // Shared token gate for every /ingest/* route. No token configured or a
 // different token both count as unauthorized.
 function isAuthorized(request: Request): boolean {
-  const expected = process.env.INGEST_TOKEN;
-  if (expected === undefined || expected.length === 0) {
-    return false;
-  }
-  const provided = bearerToken(request.headers.get("Authorization"));
-  return provided !== null && timingSafeEqual(provided, expected);
+  return isAuthorizedHeader(
+    request.headers.get("Authorization"),
+    process.env.INGEST_TOKEN,
+  );
 }
 
 http.route({
@@ -48,9 +49,23 @@ http.route({
         body as Infer<typeof childSnapshotValidator>,
       );
     } catch (error) {
-      return badRequest(
-        error instanceof Error ? error.message : "Invalid payload",
-      );
+      if (error instanceof ConvexError) {
+        return badRequest(
+          typeof error.data === "string" ? error.data : "Invalid payload",
+        );
+      }
+      // Convex surfaces nested argument-validation failures as a plain Error
+      // rather than a ConvexError, so recognize it explicitly to keep invalid
+      // payloads a 400 (the documented contract) instead of a 500.
+      if (
+        error instanceof Error &&
+        (error.name === "ArgumentValidationError" ||
+          error.message.startsWith("ArgumentValidationError:"))
+      ) {
+        return badRequest(error.message);
+      }
+      console.error("familyapp: ingest request failed", error);
+      return new Response("Internal error", { status: 500 });
     }
     return new Response(null, { status: 204 });
   }),
@@ -75,9 +90,23 @@ http.route({
         body as Infer<typeof briefingValidator>,
       );
     } catch (error) {
-      return badRequest(
-        error instanceof Error ? error.message : "Invalid payload",
-      );
+      if (error instanceof ConvexError) {
+        return badRequest(
+          typeof error.data === "string" ? error.data : "Invalid payload",
+        );
+      }
+      // Convex surfaces nested argument-validation failures as a plain Error
+      // rather than a ConvexError, so recognize it explicitly to keep invalid
+      // payloads a 400 (the documented contract) instead of a 500.
+      if (
+        error instanceof Error &&
+        (error.name === "ArgumentValidationError" ||
+          error.message.startsWith("ArgumentValidationError:"))
+      ) {
+        return badRequest(error.message);
+      }
+      console.error("familyapp: ingest request failed", error);
+      return new Response("Internal error", { status: 500 });
     }
     return new Response(null, { status: 204 });
   }),

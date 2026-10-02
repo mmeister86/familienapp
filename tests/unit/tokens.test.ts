@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bearerToken,
+  isAuthorizedHeader,
   timingSafeEqual,
 } from "../../convex/lib/tokens.js";
 describe("bearerToken", () => {
@@ -49,5 +50,32 @@ describe("timingSafeEqual", () => {
   it("is false when one string is empty", () => {
     expect(timingSafeEqual("", "x")).toBe(false);
     expect(timingSafeEqual("x", "")).toBe(false);
+  });
+});
+
+describe("isAuthorizedHeader", () => {
+  it("is true for a matching bearer token", () => {
+    expect(isAuthorizedHeader("Bearer abc", "abc")).toBe(true);
+  });
+  it("is false for a different token", () => {
+    expect(isAuthorizedHeader("Bearer abc", "abd")).toBe(false);
+  });
+  it("is false for a missing header", () => {
+    expect(isAuthorizedHeader(null, "abc")).toBe(false);
+  });
+  it("is false when no secret is configured", () => {
+    expect(isAuthorizedHeader("Bearer abc", undefined)).toBe(false);
+  });
+  it("is false for an empty secret", () => {
+    expect(isAuthorizedHeader("Bearer abc", "")).toBe(false);
+  });
+  it("is false for a whitespace-only secret", () => {
+    expect(isAuthorizedHeader("Bearer abc", "   ")).toBe(false);
+  });
+  it("is false when both header and secret are absent", () => {
+    expect(isAuthorizedHeader(null, undefined)).toBe(false);
+  });
+  it("is true for a lowercase bearer scheme", () => {
+    expect(isAuthorizedHeader("bearer abc", "abc")).toBe(true);
   });
 });

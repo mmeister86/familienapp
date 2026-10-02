@@ -28,3 +28,16 @@ export function timingSafeEqual(a: string, b: string): boolean {
   }
   return diff === 0;
 }
+
+// Fail-closed check of an Authorization header against the configured secret.
+// A missing/empty/whitespace-only secret never authenticates.
+export function isAuthorizedHeader(
+  header: string | null,
+  expected: string | undefined,
+): boolean {
+  if (expected === undefined || expected.trim().length === 0) {
+    return false;
+  }
+  const provided = bearerToken(header);
+  return provided !== null && timingSafeEqual(provided, expected);
+}
