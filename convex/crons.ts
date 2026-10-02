@@ -85,4 +85,9 @@ export const tick = internalMutation({
 
 const crons = cronJobs();
 crons.interval("hourly task maintenance", { hours: 1 }, internal.crons.tick);
+crons.interval(
+  "daily briefing cleanup",
+  { hours: 24 },
+  internal.ingest.cleanupBriefings,
+);
 export default crons;
