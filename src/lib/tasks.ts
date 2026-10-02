@@ -12,6 +12,12 @@ export type TaskInstanceItem = FunctionReturnType<
 // One row of the parent-only Tasks admin list (task doc + assignee projection).
 export type TaskAdminItem = FunctionReturnType<typeof api.tasks.list>[number]
 
+// One row of the parent-only Approvals screen (pending instance, enriched
+// like Today items and ordered by completedAt ascending, server-side).
+export type TaskPendingItem = FunctionReturnType<
+  typeof api.taskInstances.listPending
+>[number]
+
 // One entry of the parent-only user directory (assignee picker).
 export type DirectoryUser = FunctionReturnType<typeof api.users.list>[number]
 
@@ -71,6 +77,40 @@ export function formatShortDay(dateStr: string): string {
 export function formatUpcomingHeader(dateStr: string, todayStr: string): string {
   const label = formatShortDay(dateStr)
   return dateStr === addDaysString(todayStr, 1) ? `Morgen · ${label}` : label
+}
+
+// German relative time ("vor 5 Minuten") for a completedAt timestamp.
+// Picks the largest sensible unit; future timestamps read "in …".
+export function formatRelativeTimeDe(
+  timestamp: number,
+  now: number = Date.now(),
+): string {
+  const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" })
+  const diffSeconds = Math.round((timestamp - now) / 1000)
+  if (Math.abs(diffSeconds) < 60) {
+    return rtf.format(diffSeconds, "second")
+  }
+  const minutes = Math.round(diffSeconds / 60)
+  if (Math.abs(minutes) < 60) {
+    return rtf.format(minutes, "minute")
+  }
+  const hours = Math.round(minutes / 60)
+  if (Math.abs(hours) < 24) {
+    return rtf.format(hours, "hour")
+  }
+  const days = Math.round(hours / 24)
+  if (Math.abs(days) < 7) {
+    return rtf.format(days, "day")
+  }
+  const weeks = Math.round(days / 7)
+  if (Math.abs(weeks) < 5) {
+    return rtf.format(weeks, "week")
+  }
+  const months = Math.round(days / 30)
+  if (Math.abs(months) < 12) {
+    return rtf.format(months, "month")
+  }
+  return rtf.format(Math.round(days / 365), "year")
 }
 
 // One-line German detail for a recurrence ("Mo, Mi, Fr", "Monatstag 15",

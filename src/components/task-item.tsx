@@ -1,8 +1,9 @@
 import { useState } from "react"
 import { useMutation } from "convex/react"
 import { cn } from "cn"
-import { Check, Star } from "lucide-react"
+import { Check, Clock, Star } from "lucide-react"
 import { api } from "../../convex/_generated/api"
+import { useSession } from "@/hooks/useSession"
 import { formatShortDay, type TaskInstanceItem } from "@/lib/tasks"
 
 type TaskItemProps = {
@@ -13,20 +14,28 @@ type TaskItemProps = {
 }
 
 // One checkbox row of the Today/Anytime/Upcoming lists. Done items render
-// struck-through and the checkbox becomes the undo action.
+// struck-through and the checkbox becomes the undo action. Pending items show
+// a disabled waiting checkbox plus a badge (parents approve via Approvals);
+// the completer (or a parent) can withdraw the pending completion.
 export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
   const complete = useMutation(api.tasks.complete)
   const undo = useMutation(api.tasks.undo)
-  const [pending, setPending] = useState(false)
+  const { user } = useSession()
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const done = item.status === "done"
+  const awaitingApproval = item.status === "pending"
+  const canWithdraw =
+    awaitingApproval &&
+    user !== undefined &&
+    (user.role === "parent" || item.completedBy === user._id)
 
   const toggle = async (): Promise<void> => {
-    if (pending) {
+    if (busy || awaitingApproval) {
       return
     }
-    setPending(true)
+    setBusy(true)
     setError(null)
     try {
       if (done) {
@@ -37,7 +46,22 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
     } catch {
       setError("Speichern fehlgeschlagen. Bitte erneut versuchen.")
     } finally {
-      setPending(false)
+      setBusy(false)
+    }
+  }
+
+  const withdraw = async (): Promise<void> => {
+    if (busy) {
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await undo({ token, instanceId: item._id })
+    } catch {
+      setError("Speichern fehlgeschlagen. Bitte erneut versuchen.")
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -54,11 +78,13 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
           role="checkbox"
           aria-checked={done}
           aria-label={
-            done
-              ? `Als offen markieren: ${item.taskTitle}`
-              : `Als erledigt markieren: ${item.taskTitle}`
+            awaitingApproval
+              ? `Wartet auf Freigabe: ${item.taskTitle}`
+              : done
+                ? `Als offen markieren: ${item.taskTitle}`
+                : `Als erledigt markieren: ${item.taskTitle}`
           }
-          disabled={pending}
+          disabled={busy || awaitingApproval}
           onClick={() => void toggle()}
           className="flex size-11 shrink-0 items-center justify-center rounded-lg outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
@@ -68,12 +94,18 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
               "flex size-6 items-center justify-center rounded-md border-2 transition-colors",
               done
                 ? "border-primary bg-primary text-primary-foreground"
-                : overdue
-                  ? "border-destructive"
-                  : "border-muted-foreground/50",
+                : awaitingApproval
+                  ? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  : overdue
+                    ? "border-destructive"
+                    : "border-muted-foreground/50",
             )}
           >
-            {done ? <Check className="size-4" /> : null}
+            {done ? (
+              <Check className="size-4" />
+            ) : awaitingApproval ? (
+              <Clock className="size-4" />
+            ) : null}
           </span>
         </button>
         <div className="flex min-w-0 flex-1 flex-col gap-1 py-1 pr-1">
@@ -90,7 +122,17 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
               {item.taskNotes}
             </p>
           ) : null}
+          {item.status === "open" && item.rejectNote ? (
+            <p className="rounded-lg bg-amber-500/10 px-2 py-1 text-sm break-words text-amber-700 dark:text-amber-300">
+              Notiz: {item.rejectNote}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
+            {awaitingApproval ? (
+              <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                Wartet auf Freigabe
+              </span>
+            ) : null}
             {item.assigneeName ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
                 <span aria-hidden="true">{item.assigneeEmoji}</span>
@@ -114,6 +156,16 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
               <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
                 {formatShortDay(item.date)}
               </span>
+            ) : null}
+            {canWithdraw ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void withdraw()}
+                className="rounded-md px-1 py-0.5 text-xs font-medium text-muted-foreground underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                Zurückziehen
+              </button>
             ) : null}
           </div>
         </div>
