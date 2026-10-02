@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { Outlet } from "react-router"
 import { AppSidebar } from "@/components/app-sidebar"
 import { BottomNav } from "@/components/bottom-nav"
+import { useSession } from "@/hooks/useSession"
+import { useShortcuts } from "@/hooks/useShortcuts"
 import {
   SidebarInset,
   SidebarProvider,
@@ -25,6 +27,8 @@ export function AppShell() {
   const [open, setOpen] = useState(getDefaultSidebarOpen)
   // Once the user toggles the sidebar, the viewport no longer overrides it.
   const userToggled = useRef(false)
+  const { user } = useSession()
+  useShortcuts(user?.role)
 
   // Keep the sidebar in sync when the viewport crosses the laptop boundary
   // (>= 1024 px) after mount, so a tablet -> laptop resize becomes persistent.
