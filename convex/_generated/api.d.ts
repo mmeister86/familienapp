@@ -10,6 +10,8 @@
 
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
+import type * as http from "../http.js";
+import type * as ingest from "../ingest.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authErrors from "../lib/authErrors.js";
 import type * as lib_briefing from "../lib/briefing.js";
@@ -34,6 +36,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
+  http: typeof http;
+  ingest: typeof ingest;
   "lib/auth": typeof lib_auth;
   "lib/authErrors": typeof lib_authErrors;
   "lib/briefing": typeof lib_briefing;
