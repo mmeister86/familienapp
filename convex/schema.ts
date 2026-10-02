@@ -1,6 +1,12 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { recurrenceValidator } from "./lib/recurrence";
+import {
+  briefingItemValidator,
+  childDayValidator,
+  examValidator,
+  homeworkValidator,
+} from "./lib/validators";
 
 export default defineSchema({
   users: defineTable({
@@ -95,4 +101,28 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),
+
+  // Pushed by the wall dashboard (familydash), one doc per kid, replaced on
+  // every push. Shape: .docs/FAMILY_APP.md › POST /ingest/child.
+  childSnapshots: defineTable({
+    childSlug: v.string(),
+    days: v.array(childDayValidator), // today … today+6, always 7
+    homework: v.array(homeworkValidator),
+    exams: v.array(examValidator),
+    sourceUpdatedAt: v.number(), // oldest fetch time of the sources behind it
+    receivedAt: v.number(), // backend receive time (staleness fallback)
+  }).index("by_childSlug", ["childSlug"]),
+
+  // AI/rule-based briefings pushed by the dashboard; cleaned up after 14 days.
+  // Shape: .docs/FAMILY_APP.md › POST /ingest/briefing.
+  briefings: defineTable({
+    kind: v.union(v.literal("morning"), v.literal("evening")),
+    date: v.string(),
+    text: v.string(),
+    headline: v.optional(v.string()),
+    items: v.array(briefingItemValidator),
+    ai: v.boolean(),
+    generatedAt: v.number(),
+    receivedAt: v.number(),
+  }).index("by_date_kind", ["date", "kind"]),
 });
