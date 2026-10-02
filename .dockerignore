@@ -1,0 +1,24 @@
+# Build context exclusions for the production image.
+
+node_modules
+.git
+.gitignore
+
+# Local tooling / planning docs
+.superpowers
+.docs
+.opencode
+
+# Never ship local env files or secrets
+.env
+.env*
+*.local
+
+# Build output is produced inside the image
+dist
+
+# Convex backend data (dev uses a Docker volume, not files in the repo)
+convex/_generated
+
+*.log
+.DS_Store
