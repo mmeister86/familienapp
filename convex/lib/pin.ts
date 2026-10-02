@@ -111,25 +111,32 @@ export async function hashPin(
 
 // Verify a PIN against a stored hash + salt using the same PBKDF2 params.
 // Compares the decoded bytes in constant time (accumulated XOR diff).
-// Returns false on any error (e.g. malformed base64url) instead of throwing.
+// Malformed stored credentials (bad base64url, wrong hash length) return
+// false; crypto backend failures from deriveKey propagate so a system error
+// is never counted as a wrong PIN toward lockout.
 export async function verifyPin(
   pin: string,
   hash: string,
   salt: string,
 ): Promise<boolean> {
+  let expected: Uint8Array<ArrayBuffer>;
+  let saltBytes: Uint8Array<ArrayBuffer>;
   try {
-    const expected = decodeBase64Url(hash);
-    const saltBytes = decodeBase64Url(salt);
-    const actual = await deriveKey(pin, saltBytes);
-    if (expected.length !== actual.length) {
-      return false;
-    }
-    let diff = 0;
-    for (let i = 0; i < expected.length; i++) {
-      diff |= expected[i] ^ actual[i];
-    }
-    return diff === 0;
+    expected = decodeBase64Url(hash);
+    saltBytes = decodeBase64Url(salt);
   } catch {
     return false;
   }
+  if (expected.length !== KEY_LENGTH_BITS / 8) {
+    return false;
+  }
+  const actual = await deriveKey(pin, saltBytes);
+  if (expected.length !== actual.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected[i] ^ actual[i];
+  }
+  return diff === 0;
 }
