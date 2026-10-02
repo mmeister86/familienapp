@@ -66,9 +66,33 @@ export default defineSchema({
       v.literal("reward"),
       v.literal("manual"),
     ),
-    refId: v.optional(v.string()), // instance id (reason "task"); redemption id later
+    refId: v.optional(v.string()), // instance id (reason "task"); redemption id
     note: v.optional(v.string()),
     createdBy: v.id("users"),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  // Reward catalog (tiny table; full collect + sort by title, no index).
+  rewards: defineTable({
+    title: v.string(),
+    emoji: v.optional(v.string()),
+    cost: v.number(), // integer >= 1 (enforced in mutations)
+    active: v.boolean(),
+  }),
+
+  redemptions: defineTable({
+    rewardId: v.id("rewards"),
+    userId: v.id("users"),
+    costSnapshot: v.number(), // reward.cost at request time
+    status: v.union(
+      v.literal("requested"),
+      v.literal("approved"),
+      v.literal("rejected"),
+    ),
+    requestedAt: v.number(),
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"]),
 });
