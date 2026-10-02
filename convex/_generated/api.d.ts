@@ -16,6 +16,7 @@ import type * as lib_dates from "../lib/dates.js";
 import type * as lib_pin from "../lib/pin.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as seed from "../seed.js";
+import type * as taskInstances from "../taskInstances.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pin": typeof lib_pin;
   "lib/recurrence": typeof lib_recurrence;
   seed: typeof seed;
+  taskInstances: typeof taskInstances;
   tasks: typeof tasks;
 }>;
 

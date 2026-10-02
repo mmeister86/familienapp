@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { DatabaseReader } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireParent } from "./lib/auth";
+import { requireParent, requireUser } from "./lib/auth";
 import {
   datesNeedingInstances,
   recurrenceValidator,
@@ -469,6 +469,114 @@ export const remove = mutation({
   },
 });
 
+// Complete an open instance. Parents may complete anything; children their own
+// and family tasks. Phase 2 always yields status "done" (points are snapshotted
+// but never booked — Phase 3 changes this).
+export const complete = mutation({
+  args: { token: v.string(), instanceId: v.id("taskInstances") },
+  returns: v.object({ ok: v.boolean() }),
+  handler: async (ctx, args) => {
+    const caller = await requireUser(ctx, args.token);
+    const instance = await ctx.db.get(args.instanceId);
+    if (instance === null) {
+      throw new ConvexError("Task instance not found");
+    }
+    if (instance.status !== "open") {
+      throw new ConvexError("Only open tasks can be completed");
+    }
+    const allowed =
+      caller.role === "parent" ||
+      instance.assigneeId === undefined ||
+      instance.assigneeId === caller._id;
+    if (!allowed) {
+      throw new ConvexError("You cannot complete this task");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(instance._id, {
+      status: "done",
+      completedBy: caller._id,
+      completedAt: now,
+    });
+
+    // afterCompletion follow-up: schedule the next instance N days after today.
+    const task = await ctx.db.get(instance.taskId);
+    if (
+      task !== null &&
+      task.active &&
+      task.recurrence.kind === "afterCompletion"
+    ) {
+      const nextDate = addDays(
+        todayBerlin(now),
+        task.recurrence.everyNDays,
+      );
+      if (
+        task.endDate === undefined ||
+        compareDates(nextDate, task.endDate) <= 0
+      ) {
+        if (!(await instanceExistsForDate(ctx.db, task._id, nextDate))) {
+          await ctx.db.insert("taskInstances", {
+            taskId: task._id,
+            assigneeId: task.assigneeId,
+            date: nextDate,
+            status: "open",
+            pointsSnapshot: task.points,
+          });
+        }
+      }
+    }
+    return { ok: true };
+  },
+});
+
+// Reopen a done instance. Parents may undo anything; children only their own
+// completions. For afterCompletion tasks the auto-created successor is removed.
+export const undo = mutation({
+  args: { token: v.string(), instanceId: v.id("taskInstances") },
+  returns: v.object({ ok: v.boolean() }),
+  handler: async (ctx, args) => {
+    const caller = await requireUser(ctx, args.token);
+    const instance = await ctx.db.get(args.instanceId);
+    if (instance === null) {
+      throw new ConvexError("Task instance not found");
+    }
+    if (instance.status !== "done") {
+      throw new ConvexError("Only completed tasks can be undone");
+    }
+    if (caller.role !== "parent" && instance.completedBy !== caller._id) {
+      throw new ConvexError("You cannot undo this task");
+    }
+
+    await ctx.db.patch(instance._id, {
+      status: "open",
+      completedBy: undefined,
+      completedAt: undefined,
+      reviewedBy: undefined,
+      reviewedAt: undefined,
+      rejectNote: undefined,
+    });
+
+    if (instance.date !== undefined) {
+      const task = await ctx.db.get(instance.taskId);
+      if (task !== null && task.recurrence.kind === "afterCompletion") {
+        const siblings = await ctx.db
+          .query("taskInstances")
+          .withIndex("by_task", (q) => q.eq("taskId", instance.taskId))
+          .collect();
+        const successors = siblings.filter(
+          (s) =>
+            s.status === "open" &&
+            s.date !== undefined &&
+            compareDates(s.date, instance.date as string) > 0,
+        );
+        for (const successor of successors) {
+          await ctx.db.delete(successor._id);
+        }
+      }
+    }
+    return { ok: true };
+  },
+});
 
 // All tasks with the assignee projection, newest first (parent only).
 export const list = query({
