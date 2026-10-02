@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BERLIN_TZ,
   addDays,
+  berlinHour,
   compareDates,
   daysInMonth,
   isValidDateString,
@@ -158,5 +159,17 @@ describe("compareDates", () => {
     expect(compareDates("2026-01-02", "2026-01-01")).toBe(1);
     expect(compareDates("2025-12-31", "2026-01-01")).toBe(-1);
     expect(compareDates("2026-02-28", "2026-10-25")).toBe(-1);
+  });
+});
+
+describe("berlinHour", () => {
+  it("returns the Berlin hour in winter (CET, UTC+1)", () => {
+    expect(berlinHour(Date.UTC(2026, 0, 15, 7, 30))).toBe(8);
+  });
+  it("returns the Berlin hour in summer (CEST, UTC+2)", () => {
+    expect(berlinHour(Date.UTC(2026, 6, 15, 7, 30))).toBe(9);
+  });
+  it("wraps across midnight Berlin time", () => {
+    expect(berlinHour(Date.UTC(2026, 0, 15, 23, 30))).toBe(0);
   });
 });

@@ -17,6 +17,12 @@ export function toBerlinDateString(ms: number): string {
   return format(new TZDate(ms, BERLIN_TZ), "yyyy-MM-dd");
 }
 
+// Hour of day (0-23) in Berlin for the given instant. Used to decide which
+// briefing the Overview shows (PLAN §7: morning until 14:00, evening after).
+export function berlinHour(now: number = Date.now()): number {
+  return new TZDate(now, BERLIN_TZ).getHours();
+}
+
 type YearMonthDay = {
   year: number;
   month: number;
