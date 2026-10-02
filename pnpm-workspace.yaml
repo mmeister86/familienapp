@@ -1,0 +1,4 @@
+# pnpm 11+ reads these settings from pnpm-workspace.yaml.
+# (`pnpm.onlyBuiltDependencies` in package.json is deprecated and ignored.)
+allowBuilds:
+  esbuild: true
