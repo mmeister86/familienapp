@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authErrors from "../lib/authErrors.js";
+import type * as lib_dates from "../lib/dates.js";
 import type * as lib_pin from "../lib/pin.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as seed from "../seed.js";
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "lib/auth": typeof lib_auth;
   "lib/authErrors": typeof lib_authErrors;
+  "lib/dates": typeof lib_dates;
   "lib/pin": typeof lib_pin;
   "lib/recurrence": typeof lib_recurrence;
   seed: typeof seed;
