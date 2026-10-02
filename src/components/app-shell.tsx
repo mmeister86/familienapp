@@ -60,7 +60,10 @@ export function AppShell() {
         <AppSidebar />
         <SidebarInset>
           <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur">
-            <SidebarTrigger className="hidden md:inline-flex" />
+            {/* Visible on phones too: it opens the sidebar sheet, which holds
+                the role-filtered nav and the footer logout (no room for those
+                in the bottom nav). */}
+            <SidebarTrigger />
             <span className="text-base font-semibold lg:hidden">
               Familienapp
             </span>

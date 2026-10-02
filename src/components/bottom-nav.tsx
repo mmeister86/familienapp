@@ -1,12 +1,19 @@
 import { cn } from "cn"
 import { useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router"
-import { isNavItemActive, navItems } from "@/lib/nav"
+import { useSession } from "@/hooks/useSession"
+import { isNavItemActive, isNavItemVisible, navItems } from "@/lib/nav"
 
 /** Phone-only bottom navigation (`md` and up use the sidebar). */
 export function BottomNav() {
   const { pathname } = useLocation()
+  const { user } = useSession()
   const activeRef = useRef<HTMLLIElement>(null)
+  // Unknown/loading role renders no destinations (see isNavItemVisible) so
+  // parent items never flash to kids while the session resolves.
+  const visibleItems = navItems.filter((item) =>
+    isNavItemVisible(item, user?.role),
+  )
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({
@@ -22,7 +29,7 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
     >
       <ul className="no-scrollbar flex items-stretch gap-1 overflow-x-auto px-1 py-1">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const active = isNavItemActive(item, pathname)
 
           return (
