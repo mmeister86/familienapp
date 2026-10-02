@@ -104,8 +104,11 @@ export function RewardEditor({
 
   const validate = (): FieldErrors => {
     const errors: FieldErrors = {}
-    if (form.title.trim() === "") {
+    const trimmedTitle = form.title.trim()
+    if (trimmedTitle === "") {
       errors.title = "Bitte einen Titel eingeben."
+    } else if (trimmedTitle.length > MAX_TITLE_LENGTH) {
+      errors.title = `Der Titel darf höchstens ${String(MAX_TITLE_LENGTH)} Zeichen haben.`
     }
     const cost = Number(form.cost)
     if (form.cost.trim() === "" || !Number.isInteger(cost) || cost < 1) {

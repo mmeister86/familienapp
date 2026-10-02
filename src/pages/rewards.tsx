@@ -91,7 +91,8 @@ function KidRewardsView({ token }: { token: string }) {
         {balance === undefined ? (
           <Skeleton className="h-9 w-56 bg-muted" />
         ) : (
-          <p className="text-2xl font-bold tracking-tight">
+          <p aria-live="polite" className="text-2xl font-bold tracking-tight">
+            <span aria-hidden="true">🏆 </span>
             {formatAvailableLabel(balance.available)}
           </p>
         )}

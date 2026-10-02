@@ -35,7 +35,9 @@ export function formatRedemptionStatusLabel(
   return `${REDEMPTION_STATUS_LABELS[status]} ${REDEMPTION_STATUS_SYMBOLS[status]}`
 }
 
-// Available-balance card label: "🏆 1 Punkt verfügbar" / "🏆 5 Punkte verfügbar".
+// Available-balance card label: "1 Punkt verfügbar" / "5 Punkte verfügbar".
+// The trophy is composed by the caller and hidden from screen readers,
+// mirroring PointsCounter.
 export function formatAvailableLabel(available: number): string {
-  return `🏆 ${formatPointsLabel(available)} verfügbar`
+  return `${formatPointsLabel(available)} verfügbar`
 }
