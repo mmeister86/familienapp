@@ -35,3 +35,6 @@ lerna-debug.log*
 
 # Agent tooling
 .superpowers/
+
+# Git worktrees (isolated feature workspaces)
+/.worktrees/
