@@ -70,8 +70,15 @@ export const getBalance = query({
     const caller = await requireUser(ctx, args.token);
     const target = await resolveTarget(ctx.db, caller, args.userId);
     const balance = await sumBalance(ctx.db, target);
-    // Phase 4 subtracts the cost of requested redemptions from `available`.
-    return { balance, available: balance };
+    // Requested (not yet approved) redemptions block their cost from `available`.
+    const ownRedemptions = await ctx.db
+      .query("redemptions")
+      .withIndex("by_user", (q) => q.eq("userId", target))
+      .collect();
+    const blocked = ownRedemptions
+      .filter((r) => r.status === "requested")
+      .reduce((sum, r) => sum + r.costSnapshot, 0);
+    return { balance, available: balance - blocked };
   },
 });
 
