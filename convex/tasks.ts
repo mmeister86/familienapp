@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { DatabaseReader } from "./_generated/server";
+import type { DatabaseReader, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireParent, requireUser } from "./lib/auth";
 import {
@@ -17,6 +17,7 @@ import {
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_NOTES_LENGTH = 2000;
+const MAX_REJECT_NOTE_LENGTH = 500;
 
 // Task document plus the resolved assignee projection for the admin UI.
 // Only public profile fields (slug/name/color/emoji) — never PIN fields.
@@ -471,9 +472,41 @@ export const remove = mutation({
   },
 });
 
+// afterCompletion follow-up: when an instance becomes "done", schedule the
+// next instance N days after today (Berlin), respecting the task's endDate.
+// Idempotent via by_task_date. Shared by `complete` and `approve`.
+async function maybeCreateAfterCompletionSuccessor(
+  ctx: MutationCtx,
+  instance: Doc<"taskInstances">,
+  now: number,
+): Promise<void> {
+  const task = await ctx.db.get(instance.taskId);
+  if (
+    task !== null &&
+    task.active &&
+    task.recurrence.kind === "afterCompletion"
+  ) {
+    const nextDate = addDays(todayBerlin(now), task.recurrence.everyNDays);
+    if (
+      task.endDate === undefined ||
+      compareDates(nextDate, task.endDate) <= 0
+    ) {
+      if (!(await instanceExistsForDate(ctx.db, task._id, nextDate))) {
+        await ctx.db.insert("taskInstances", {
+          taskId: task._id,
+          assigneeId: task.assigneeId,
+          date: nextDate,
+          status: "open",
+          pointsSnapshot: task.points,
+        });
+      }
+    }
+  }
+}
+
 // Complete an open instance. Parents may complete anything; children their own
-// and family tasks. Phase 2 always yields status "done" (points are snapshotted
-// but never booked — Phase 3 changes this).
+// and family tasks. Child tasks with points go to "pending" for parent
+// approval; everything else (family/parent/no-point tasks) goes to "done".
 export const complete = mutation({
   args: { token: v.string(), instanceId: v.id("taskInstances") },
   returns: v.object({ ok: v.boolean() }),
@@ -495,38 +528,122 @@ export const complete = mutation({
     }
 
     const now = Date.now();
+    const points = instance.pointsSnapshot ?? 0;
+    const assignee =
+      instance.assigneeId === undefined
+        ? null
+        : await ctx.db.get(instance.assigneeId);
+    const needsApproval =
+      assignee !== null && assignee.role === "child" && points > 0;
+
+    if (needsApproval) {
+      await ctx.db.patch(instance._id, {
+        status: "pending",
+        completedBy: caller._id,
+        completedAt: now,
+        rejectNote: undefined,
+      });
+      // No successor while pending — `approve` creates it instead.
+      return { ok: true };
+    }
+
     await ctx.db.patch(instance._id, {
       status: "done",
       completedBy: caller._id,
       completedAt: now,
     });
 
-    // afterCompletion follow-up: schedule the next instance N days after today.
-    const task = await ctx.db.get(instance.taskId);
-    if (
-      task !== null &&
-      task.active &&
-      task.recurrence.kind === "afterCompletion"
-    ) {
-      const nextDate = addDays(
-        todayBerlin(now),
-        task.recurrence.everyNDays,
-      );
-      if (
-        task.endDate === undefined ||
-        compareDates(nextDate, task.endDate) <= 0
-      ) {
-        if (!(await instanceExistsForDate(ctx.db, task._id, nextDate))) {
-          await ctx.db.insert("taskInstances", {
-            taskId: task._id,
-            assigneeId: task.assigneeId,
-            date: nextDate,
-            status: "open",
-            pointsSnapshot: task.points,
-          });
-        }
-      }
+    await maybeCreateAfterCompletionSuccessor(ctx, instance, now);
+    return { ok: true };
+  },
+});
+
+// Approve a pending instance (parent only): mark "done", book the points,
+// and create the afterCompletion successor if any.
+export const approve = mutation({
+  args: { token: v.string(), instanceId: v.id("taskInstances") },
+  returns: v.object({ ok: v.boolean() }),
+  handler: async (ctx, args) => {
+    const caller = await requireParent(ctx, args.token);
+    const instance = await ctx.db.get(args.instanceId);
+    if (instance === null) {
+      throw new ConvexError("Task instance not found");
     }
+    if (instance.status !== "pending") {
+      throw new ConvexError("Only pending tasks can be approved");
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(instance._id, {
+      status: "done",
+      reviewedBy: caller._id,
+      reviewedAt: now,
+      rejectNote: undefined,
+    });
+
+    const points = instance.pointsSnapshot ?? 0;
+    if (points > 0) {
+      if (instance.assigneeId === undefined) {
+        throw new ConvexError("Cannot book points without assignee");
+      }
+      const assignee = await ctx.db.get(instance.assigneeId);
+      if (assignee === null) {
+        throw new ConvexError("Assignee not found");
+      }
+      await ctx.db.insert("pointTransactions", {
+        userId: instance.assigneeId,
+        delta: points,
+        reason: "task",
+        refId: instance._id,
+        createdBy: caller._id,
+        createdAt: now,
+      });
+    }
+
+    await maybeCreateAfterCompletionSuccessor(ctx, instance, now);
+    return { ok: true };
+  },
+});
+
+// Reject a pending instance (parent only): back to "open" with an optional
+// note, so the kid can re-complete. Books nothing.
+export const reject = mutation({
+  args: {
+    token: v.string(),
+    instanceId: v.id("taskInstances"),
+    note: v.optional(v.string()),
+  },
+  returns: v.object({ ok: v.boolean() }),
+  handler: async (ctx, args) => {
+    const caller = await requireParent(ctx, args.token);
+    const instance = await ctx.db.get(args.instanceId);
+    if (instance === null) {
+      throw new ConvexError("Task instance not found");
+    }
+    if (instance.status !== "pending") {
+      throw new ConvexError("Only pending tasks can be rejected");
+    }
+
+    let rejectNote: string | undefined;
+    if (args.note !== undefined) {
+      const trimmed = args.note.trim();
+      if (trimmed.length > MAX_REJECT_NOTE_LENGTH) {
+        throw new ConvexError(
+          `Note must be at most ${String(MAX_REJECT_NOTE_LENGTH)} characters`,
+        );
+      }
+      rejectNote = trimmed.length === 0 ? undefined : trimmed;
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(instance._id, {
+      status: "open",
+      completedBy: undefined,
+      completedAt: undefined,
+      reviewedBy: caller._id,
+      reviewedAt: now,
+      rejectNote,
+    });
     return { ok: true };
   },
 });

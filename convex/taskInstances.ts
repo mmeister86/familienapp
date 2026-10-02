@@ -2,7 +2,7 @@ import { v, type Infer } from "convex/values";
 import { query } from "./_generated/server";
 import type { DatabaseReader } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireUser } from "./lib/auth";
+import { requireParent, requireUser } from "./lib/auth";
 import { addDays, compareDates, todayBerlin, toBerlinDateString } from "./lib/dates";
 
 // Instance fields plus the resolved task title/notes, the public assignee
@@ -116,13 +116,17 @@ export const listToday = query({
     const today = todayBerlin();
 
     // Overdue: one-off (kind "none") and afterCompletion instances, dated in
-    // the past, still open. afterCompletion instances never miss, so past-due
-    // ones appear as overdue until completed.
+    // the past, still open or pending approval. afterCompletion instances
+    // never miss, so past-due ones appear as overdue until completed.
     const openCandidates = await ctx.db
       .query("taskInstances")
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .collect();
-    const overdueDated = openCandidates.filter(
+    const pendingCandidates = await ctx.db
+      .query("taskInstances")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
+    const overdueDated = [...openCandidates, ...pendingCandidates].filter(
       (i) => i.date !== undefined && compareDates(i.date, today) < 0,
     );
     const overdueItems: TaskInstanceItem[] = [];
@@ -147,7 +151,8 @@ export const listToday = query({
       compareDates(a.date as string, b.date as string),
     );
 
-    // Today: opens due today, then everything completed today (Berlin day).
+    // Today: opens due today, then pending approvals, then everything
+    // completed today (Berlin day).
     const datedToday = await ctx.db
       .query("taskInstances")
       .withIndex("by_date", (q) => q.eq("date", today))
@@ -158,6 +163,13 @@ export const listToday = query({
       datedToday.filter((i) => i.status === "open"),
     );
     openToday.sort(byTaskTitleAsc);
+
+    const pendingToday = await toVisibleItems(
+      ctx.db,
+      user,
+      datedToday.filter((i) => i.status === "pending"),
+    );
+    pendingToday.sort(byTaskTitleAsc);
 
     const doneCandidates = await ctx.db
       .query("taskInstances")
@@ -174,11 +186,14 @@ export const listToday = query({
     );
     doneToday.sort(byTaskTitleAsc);
 
-    return { overdue: overdueItems, today: [...openToday, ...doneToday] };
+    return {
+      overdue: overdueItems,
+      today: [...openToday, ...pendingToday, ...doneToday],
+    };
   },
 });
 
-// Undated open instances ("anytime"), by task title.
+// Undated open and pending instances ("anytime"), by task title.
 export const listAnytime = query({
   args: { token: v.string() },
   returns: v.array(taskInstanceItemValidator),
@@ -188,10 +203,16 @@ export const listAnytime = query({
       .query("taskInstances")
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .collect();
+    const pendingCandidates = await ctx.db
+      .query("taskInstances")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
     const items = await toVisibleItems(
       ctx.db,
       user,
-      openCandidates.filter((i) => i.date === undefined),
+      [...openCandidates, ...pendingCandidates].filter(
+        (i) => i.date === undefined,
+      ),
     );
     items.sort(byTaskTitleAsc);
     return items;
@@ -215,11 +236,34 @@ export const listUpcoming = query({
       const items = await toVisibleItems(
         ctx.db,
         user,
-        dated.filter((i) => i.status === "open"),
+        dated.filter((i) => i.status === "open" || i.status === "pending"),
       );
       items.sort(byTaskTitleAsc);
       days.push({ date, items });
     }
     return days;
+  },
+});
+
+// All pending instances for the Approvals screen (parent only, any date incl.
+// undated), oldest completion first. No visibility filter: parents see all.
+export const listPending = query({
+  args: { token: v.string() },
+  returns: v.array(taskInstanceItemValidator),
+  handler: async (ctx, args) => {
+    await requireParent(ctx, args.token);
+    const pending = await ctx.db
+      .query("taskInstances")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .collect();
+    const items: TaskInstanceItem[] = [];
+    for (const instance of pending) {
+      const item = await toItem(ctx.db, instance);
+      if (item !== null) {
+        items.push(item);
+      }
+    }
+    items.sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
+    return items;
   },
 });
