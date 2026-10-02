@@ -3,6 +3,7 @@ import type { FormEvent, KeyboardEvent } from "react"
 import { Link } from "react-router"
 import { useMutation, useQuery } from "convex/react"
 import { cn } from "cn"
+import { Gift } from "lucide-react"
 import { api } from "../../convex/_generated/api"
 import {
   AssigneeChip,
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
+import type { RedemptionItem } from "@/lib/rewards"
 import {
   formatRelativeTimeDe,
   formatShortDay,
@@ -39,6 +41,36 @@ function CompletedLabel({ item }: { item: TaskPendingItem }) {
   )
 }
 
+// Reward emoji for a redemption, with a Gift icon fallback mirroring the
+// kid grid on the Rewards page. `size` scales the card and table variants.
+function RedemptionEmoji({
+  emoji,
+  size,
+}: {
+  emoji: string | undefined
+  size: "card" | "table"
+}) {
+  if (emoji === undefined) {
+    return (
+      <Gift
+        aria-hidden="true"
+        className={cn(
+          "text-muted-foreground",
+          size === "card" ? "size-9" : "size-4",
+        )}
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={size === "card" ? "text-4xl leading-none" : "text-base"}
+    >
+      {emoji}
+    </span>
+  )
+}
+
 export function ApprovalsPage() {
   const { token, user } = useSession()
   const isParent = user?.role === "parent"
@@ -46,8 +78,14 @@ export function ApprovalsPage() {
     api.taskInstances.listPending,
     token && isParent ? { token } : "skip",
   )
+  const requested = useQuery(
+    api.rewards.listRequested,
+    token && isParent ? { token } : "skip",
+  )
   const approveTask = useMutation(api.tasks.approve)
   const rejectTask = useMutation(api.tasks.reject)
+  const approveRedemption = useMutation(api.rewards.approveRedemption)
+  const rejectRedemption = useMutation(api.rewards.rejectRedemption)
 
   const [busyId, setBusyId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -65,7 +103,7 @@ export function ApprovalsPage() {
     )
   }
 
-  if (token === null || pending === undefined) {
+  if (token === null || pending === undefined || requested === undefined) {
     return (
       <section aria-label="Freigaben" className="flex flex-col gap-4">
         <Skeleton className="h-8 w-32 bg-muted" />
@@ -152,6 +190,43 @@ export function ApprovalsPage() {
     }
   }
 
+  const handleApproveRedemption = async (
+    item: RedemptionItem,
+  ): Promise<void> => {
+    if (busy) {
+      return
+    }
+    setBusyId(item._id)
+    setActionError(null)
+    try {
+      await approveRedemption({ token, redemptionId: item._id })
+    } catch {
+      setActionError(SAVE_FAILED_MESSAGE)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleRejectRedemption = async (
+    item: RedemptionItem,
+  ): Promise<void> => {
+    if (busy) {
+      return
+    }
+    setBusyId(item._id)
+    setActionError(null)
+    try {
+      await rejectRedemption({ token, redemptionId: item._id })
+    } catch {
+      setActionError(SAVE_FAILED_MESSAGE)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const tasksEmpty = pending.length === 0
+  const rewardsEmpty = requested.length === 0
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Freigaben</h1>
@@ -162,21 +237,22 @@ export function ApprovalsPage() {
         </p>
       ) : null}
 
-      {/* Phase 4 adds a "Belohnungen" section below this one. */}
-      <section
-        aria-labelledby="approvals-tasks-heading"
-        className="flex flex-col gap-3"
-      >
-        <h2
-          id="approvals-tasks-heading"
-          className="text-lg font-semibold tracking-tight"
-        >
-          Aufgaben
-        </h2>
+      {tasksEmpty && rewardsEmpty ? (
+        <p className="text-muted-foreground">Keine offenen Freigaben. 🎉</p>
+      ) : null}
 
-        {pending.length === 0 ? (
-          <p className="text-muted-foreground">Keine offenen Freigaben. 🎉</p>
-        ) : (
+      {!tasksEmpty ? (
+        <section
+          aria-labelledby="approvals-tasks-heading"
+          className="flex flex-col gap-3"
+        >
+          <h2
+            id="approvals-tasks-heading"
+            className="text-lg font-semibold tracking-tight"
+          >
+            Aufgaben
+          </h2>
+
           <>
             {/* Cards below lg. */}
             <ul className="flex flex-col gap-2 lg:hidden">
@@ -327,8 +403,147 @@ export function ApprovalsPage() {
               </table>
             </div>
           </>
-        )}
-      </section>
+        </section>
+      ) : null}
+
+      {!rewardsEmpty ? (
+        <section
+          aria-labelledby="approvals-rewards-heading"
+          className="flex flex-col gap-3"
+        >
+          <h2
+            id="approvals-rewards-heading"
+            className="text-lg font-semibold tracking-tight"
+          >
+            Belohnungen
+          </h2>
+
+          {/* Cards below lg. */}
+          <ul className="flex flex-col gap-2 lg:hidden">
+            {requested.map((item) => (
+              <li
+                key={item._id}
+                className="flex flex-col gap-2 rounded-xl border bg-card p-3"
+              >
+                <div className="flex items-center gap-2">
+                  <RedemptionEmoji emoji={item.rewardEmoji} size="card" />
+                  <p className="min-w-0 text-base font-medium break-words">
+                    {item.rewardTitle}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                  <AssigneeChip name={item.userName} emoji={item.userEmoji} />
+                  <PointsChip points={item.costSnapshot} />
+                  <span className="whitespace-nowrap">
+                    {formatRelativeTimeDe(item.requestedAt)}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="min-h-11 flex-1"
+                    disabled={busy}
+                    aria-label={`Bestätigen: ${item.rewardTitle}`}
+                    onClick={() => void handleApproveRedemption(item)}
+                  >
+                    Bestätigen
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 flex-1"
+                    disabled={busy}
+                    aria-label={`Ablehnen: ${item.rewardTitle}`}
+                    onClick={() => void handleRejectRedemption(item)}
+                  >
+                    Ablehnen
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Table on lg. */}
+          <div className="hidden overflow-x-auto rounded-xl border bg-card lg:block">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Belohnung
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Kind
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Kosten
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Angefragt
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Aktionen
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {requested.map((item) => (
+                  <tr
+                    key={item._id}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="max-w-64 px-4 py-3 font-medium">
+                      <span className="flex items-center gap-2 break-words">
+                        <RedemptionEmoji
+                          emoji={item.rewardEmoji}
+                          size="table"
+                        />
+                        {item.rewardTitle}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <AssigneeChip
+                        name={item.userName}
+                        emoji={item.userEmoji}
+                      />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <PointsChip points={item.costSnapshot} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                      {formatRelativeTimeDe(item.requestedAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`Bestätigen: ${item.rewardTitle}`}
+                          onClick={() => void handleApproveRedemption(item)}
+                        >
+                          Bestätigen
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`Ablehnen: ${item.rewardTitle}`}
+                          onClick={() => void handleRejectRedemption(item)}
+                        >
+                          Ablehnen
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <Dialog
         open={rejectTarget !== null}
