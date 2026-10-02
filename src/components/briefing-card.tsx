@@ -45,6 +45,7 @@ export function BriefingCard({ briefing }: { briefing: BriefingView }) {
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
+          aria-label={expanded ? "Briefing einklappen" : "Briefing ausklappen"}
           className="rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           {expanded ? "Einklappen" : "Ausklappen"}

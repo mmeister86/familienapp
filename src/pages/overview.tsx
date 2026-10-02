@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { BriefingCard } from "@/components/briefing-card"
@@ -27,9 +27,14 @@ export function OverviewPage() {
     token && user?.role === "parent" ? { token } : "skip",
   )
 
-  // Capture the render time once (lazy initializer) so the stale check has a
-  // stable reference; Date.now() must not be called during render (purity).
-  const [now] = useState(() => Date.now())
+  // Track the current time so the stale check and day labels stay fresh while
+  // the page remains open. Date.now() must not be called during render (purity),
+  // so it is initialized lazily and refreshed on an interval.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   if (token === null || children === undefined) {
     return <LoadingState />

@@ -78,7 +78,7 @@ function EventsList({ day }: { day: ChildDay }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <h4 className="text-sm font-semibold">{title}</h4>
+      <h3 className="text-sm font-semibold">{title}</h3>
       {children}
     </div>
   )
@@ -98,6 +98,19 @@ export function ChildDayCard({
   now: number
 }) {
   const [dayIndex, setDayIndex] = useState(0)
+
+  if (snapshot.days.length === 0) {
+    return (
+      <section className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <span aria-hidden="true">{emoji}</span>
+          <span style={{ color }}>{name}</span>
+        </h2>
+        <p className="mt-2">Noch keine Tagesdaten.</p>
+      </section>
+    )
+  }
+
   const today = todayBerlin(now)
   const day = snapshot.days[dayIndex]
   const homework = snapshot.homework.filter((item) =>
@@ -129,13 +142,12 @@ export function ChildDayCard({
         </p>
       ) : null}
 
-      <div role="tablist" aria-label="Tag wählen" className="flex flex-wrap gap-1">
+      <div role="group" aria-label="Tag wählen" className="flex flex-wrap gap-1">
         {snapshot.days.map((entry, index) => (
           <button
             key={entry.date}
             type="button"
-            role="tab"
-            aria-selected={index === dayIndex}
+            aria-pressed={index === dayIndex}
             onClick={() => setDayIndex(index)}
             className={
               index === dayIndex
@@ -201,8 +213,8 @@ export function ChildDayCard({
             {exams.map((exam, index) => (
               <li key={index}>
                 <span className="font-medium">{exam.subject}</span>{" "}
-                <span className="text-muted-foreground">({exam.date})</span>{" "}
-                {exam.text ?? ""}
+                <span className="text-muted-foreground">({exam.date})</span>
+                {exam.text ? ` ${exam.text}` : ""}
               </li>
             ))}
           </ul>
