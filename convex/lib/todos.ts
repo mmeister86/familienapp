@@ -1,6 +1,8 @@
-// Pure wire mapping for GET /todos (the wall dashboard). Kept free of Convex
-// imports so it is unit-testable; the binding contract lives in
-// .docs/FAMILY_APP.md › GET /todos.
+// Pure wire mapping and selection predicates for GET /todos (the wall
+// dashboard) and the app's Today view. Kept free of Convex imports so it is
+// unit-testable; the binding contract lives in .docs/FAMILY_APP.md › GET /todos.
+
+import { addDays, compareDates, toBerlinDateString } from "./dates";
 
 export type TaskStatus = "open" | "pending" | "done" | "missed";
 
@@ -84,4 +86,65 @@ export function toWireTask(input: WireTaskInput): WireTask | null {
     task.recurring = true;
   }
   return task;
+}
+
+// The Berlin days a window covers: [today, today+days-1]. `days` is the
+// validated 1..7 parameter, so today is always included and today+days is not.
+export function windowDates(today: string, days: number): string[] {
+  const dates: string[] = [];
+  for (let offset = 0; offset < days; offset++) {
+    dates.push(addDays(today, offset));
+  }
+  return dates;
+}
+
+// Shared Today-view rules. Both `listToday` and `GET /todos` use these so the
+// two views cannot drift apart. Plain fields only; no Convex docs.
+
+// Overdue: an open/pending instance dated before today whose task is a one-off
+// ("none") or "afterCompletion". Daily/weekly/monthly instances roll forward
+// instead of becoming overdue. `afterCompletion` instances never miss, so
+// past-due ones stay here until completed.
+export function isOverdueForToday(
+  input: {
+    date?: string;
+    status: TaskStatus;
+    recurrenceKind: RecurrenceKind;
+  },
+  today: string,
+): boolean {
+  if (input.date === undefined || compareDates(input.date, today) >= 0) {
+    return false;
+  }
+  if (input.status !== "open" && input.status !== "pending") {
+    return false;
+  }
+  return (
+    input.recurrenceKind === "none" ||
+    input.recurrenceKind === "afterCompletion"
+  );
+}
+
+// Done today: a "done" instance completed during the given Berlin day,
+// regardless of the date it was scheduled for.
+export function isDoneToday(
+  input: { status: TaskStatus; completedAt?: number },
+  today: string,
+): boolean {
+  return (
+    input.status === "done" &&
+    input.completedAt !== undefined &&
+    toBerlinDateString(input.completedAt) === today
+  );
+}
+
+// Undated open/pending instances ("anytime").
+export function isUndatedActive(input: {
+  date?: string;
+  status: TaskStatus;
+}): boolean {
+  return (
+    input.date === undefined &&
+    (input.status === "open" || input.status === "pending")
+  );
 }

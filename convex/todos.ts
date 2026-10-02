@@ -2,13 +2,17 @@ import { ConvexError, v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import type { DatabaseReader } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { compareDates, todayBerlin } from "./lib/dates";
 import {
-  addDays,
-  compareDates,
-  toBerlinDateString,
-  todayBerlin,
-} from "./lib/dates";
-import { toWireTask, MAX_DAYS, type WirePerson, type WireTask } from "./lib/todos";
+  isDoneToday,
+  isOverdueForToday,
+  isUndatedActive,
+  toWireTask,
+  windowDates,
+  MAX_DAYS,
+  type WirePerson,
+  type WireTask,
+} from "./lib/todos";
 
 // Wire contract for GET /todos — the binding spec is .docs/FAMILY_APP.md.
 // Optional fields are omitted, never null.
@@ -65,8 +69,7 @@ export const getTodos = internalQuery({
     const selected = new Map<string, Doc<"taskInstances">>();
 
     // 1. Every instance dated within [today, today+days-1], all statuses.
-    for (let offset = 0; offset < args.days; offset++) {
-      const date = addDays(today, offset);
+    for (const date of windowDates(today, args.days)) {
       const dated = await ctx.db
         .query("taskInstances")
         .withIndex("by_date", (q) => q.eq("date", date))
@@ -88,34 +91,37 @@ export const getTodos = internalQuery({
     const activeCandidates = [...openCandidates, ...pendingCandidates];
 
     // 2. Overdue open/pending instances whose task is a one-off or
-    // afterCompletion (same rule as listToday's overdue).
+    // afterCompletion (shared with listToday's overdue).
     for (const instance of activeCandidates) {
-      if (
-        instance.date === undefined ||
-        compareDates(instance.date, today) >= 0
-      ) {
-        continue;
-      }
       const task = await ctx.db.get(instance.taskId);
-      if (
-        task === null ||
-        (task.recurrence.kind !== "none" &&
-          task.recurrence.kind !== "afterCompletion")
-      ) {
+      if (task === null) {
         continue;
       }
-      selected.set(instance._id, instance);
+      if (
+        isOverdueForToday(
+          {
+            date: instance.date,
+            status: instance.status,
+            recurrenceKind: task.recurrence.kind,
+          },
+          today,
+        )
+      ) {
+        selected.set(instance._id, instance);
+      }
     }
 
-    // 3. Instances completed today (Berlin day), any date (listToday rule).
+    // 3. Instances completed today (Berlin day), any date (shared rule).
     const doneCandidates = await ctx.db
       .query("taskInstances")
       .withIndex("by_status", (q) => q.eq("status", "done"))
       .collect();
     for (const instance of doneCandidates) {
       if (
-        instance.completedAt !== undefined &&
-        toBerlinDateString(instance.completedAt) === today
+        isDoneToday(
+          { status: instance.status, completedAt: instance.completedAt },
+          today,
+        )
       ) {
         selected.set(instance._id, instance);
       }
@@ -123,7 +129,7 @@ export const getTodos = internalQuery({
 
     // 4. Undated open/pending instances ("anytime").
     for (const instance of activeCandidates) {
-      if (instance.date === undefined) {
+      if (isUndatedActive({ date: instance.date, status: instance.status })) {
         selected.set(instance._id, instance);
       }
     }

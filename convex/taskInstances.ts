@@ -3,7 +3,11 @@ import { query } from "./_generated/server";
 import type { DatabaseReader } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireParent, requireUser } from "./lib/auth";
-import { addDays, compareDates, todayBerlin, toBerlinDateString } from "./lib/dates";
+import { addDays, compareDates, todayBerlin } from "./lib/dates";
+import {
+  isDoneToday,
+  isOverdueForToday,
+} from "./lib/todos";
 
 // Instance fields plus the resolved task title/notes, the public assignee
 // projection (no PIN fields), and whether the task recurs.
@@ -126,19 +130,24 @@ export const listToday = query({
       .query("taskInstances")
       .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
-    const overdueDated = [...openCandidates, ...pendingCandidates].filter(
-      (i) => i.date !== undefined && compareDates(i.date, today) < 0,
-    );
     const overdueItems: TaskInstanceItem[] = [];
-    for (const instance of overdueDated) {
+    for (const instance of [...openCandidates, ...pendingCandidates]) {
       if (!visibleTo(user, instance)) {
         continue;
       }
       const task = await ctx.db.get(instance.taskId);
+      if (task === null) {
+        continue;
+      }
       if (
-        task === null ||
-        (task.recurrence.kind !== "none" &&
-          task.recurrence.kind !== "afterCompletion")
+        !isOverdueForToday(
+          {
+            date: instance.date,
+            status: instance.status,
+            recurrenceKind: task.recurrence.kind,
+          },
+          today,
+        )
       ) {
         continue;
       }
@@ -178,10 +187,8 @@ export const listToday = query({
     const doneToday = await toVisibleItems(
       ctx.db,
       user,
-      doneCandidates.filter(
-        (i) =>
-          i.completedAt !== undefined &&
-          toBerlinDateString(i.completedAt) === today,
+      doneCandidates.filter((i) =>
+        isDoneToday({ status: i.status, completedAt: i.completedAt }, today),
       ),
     );
     doneToday.sort(byTaskTitleAsc);
