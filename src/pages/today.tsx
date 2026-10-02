@@ -1,7 +1,9 @@
 import { useMemo } from "react"
+import { Link } from "react-router"
 import { useQuery } from "convex/react"
 import { Users } from "lucide-react"
 import { api } from "../../convex/_generated/api"
+import { PointsCounter } from "@/components/points"
 import { TaskItem } from "@/components/task-item"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
@@ -60,6 +62,11 @@ export function TodayPage() {
   const { token, user } = useSession()
   const data = useQuery(api.taskInstances.listToday, token ? { token } : "skip")
   const isParent = user?.role === "parent"
+  const isChild = user?.role === "child"
+  const balance = useQuery(
+    api.points.getBalance,
+    token && isChild ? { token } : "skip",
+  )
 
   const overdueGroups = useMemo(
     () => (data === undefined ? [] : groupByPerson(data.overdue)),
@@ -76,8 +83,17 @@ export function TodayPage() {
 
   if (data.overdue.length === 0 && data.today.length === 0) {
     return (
-      <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
+        {isChild ? (
+          <Link
+            to="/points"
+            aria-label="Zu den Punkten"
+            className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <PointsCounter balance={balance?.balance} />
+          </Link>
+        ) : null}
         <p className="text-muted-foreground">Alles erledigt! 🎉</p>
       </section>
     )
@@ -86,6 +102,16 @@ export function TodayPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
+
+      {isChild ? (
+        <Link
+          to="/points"
+          aria-label="Zu den Punkten"
+          className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <PointsCounter balance={balance?.balance} />
+        </Link>
+      ) : null}
 
       {data.overdue.length > 0 ? (
         <section aria-labelledby="today-overdue" className="flex flex-col gap-3">
