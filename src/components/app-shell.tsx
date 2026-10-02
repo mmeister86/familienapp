@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Outlet } from "react-router"
 import { AppSidebar } from "@/components/app-sidebar"
 import { BottomNav } from "@/components/bottom-nav"
@@ -22,16 +22,46 @@ function getDefaultSidebarOpen(): boolean {
 
 /** Responsive app shell: bottom nav on phone, sidebar from tablet upwards. */
 export function AppShell() {
-  const [defaultOpen] = useState(getDefaultSidebarOpen)
+  const [open, setOpen] = useState(getDefaultSidebarOpen)
+  // Once the user toggles the sidebar, the viewport no longer overrides it.
+  const userToggled = useRef(false)
+
+  // Keep the sidebar in sync when the viewport crosses the laptop boundary
+  // (>= 1024 px) after mount, so a tablet -> laptop resize becomes persistent.
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return
+    }
+
+    const mql = window.matchMedia("(min-width: 1024px)")
+    const onChange = (event: MediaQueryListEvent) => {
+      if (userToggled.current) {
+        return
+      }
+      setOpen(event.matches)
+    }
+
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
 
   return (
-    <SidebarProvider defaultOpen={defaultOpen}>
+    <SidebarProvider
+      open={open}
+      onOpenChange={(nextOpen) => {
+        userToggled.current = true
+        setOpen(nextOpen)
+      }}
+    >
       <TooltipProvider delay={300}>
         <AppSidebar />
         <SidebarInset>
           <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur">
             <SidebarTrigger className="hidden md:inline-flex" />
-            <span className="text-base font-semibold md:hidden">
+            <span className="text-base font-semibold lg:hidden">
               Familienapp
             </span>
           </header>
