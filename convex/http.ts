@@ -3,6 +3,7 @@ import { ConvexError, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { isAuthorizedHeader } from "./lib/tokens";
+import { parseDaysParam } from "./lib/todos";
 import {
   briefingValidator,
   childSnapshotValidator,
@@ -27,6 +28,14 @@ function isAuthorized(request: Request): boolean {
   return isAuthorizedHeader(
     request.headers.get("Authorization"),
     process.env.INGEST_TOKEN,
+  );
+}
+
+// Dashboard token gate for GET /todos (separate secret from the ingest token).
+function isDashboardAuthorized(request: Request): boolean {
+  return isAuthorizedHeader(
+    request.headers.get("Authorization"),
+    process.env.DASHBOARD_TOKEN,
   );
 }
 
@@ -109,6 +118,32 @@ http.route({
       return new Response("Internal error", { status: 500 });
     }
     return new Response(null, { status: 204 });
+  }),
+});
+
+http.route({
+  path: "/todos",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!isDashboardAuthorized(request)) {
+      return unauthorized();
+    }
+    const days = parseDaysParam(new URL(request.url).searchParams);
+    if (days === null) {
+      return badRequest("days must be an integer between 1 and 7");
+    }
+    try {
+      const data = await ctx.runQuery(internal.todos.getTodos, { days });
+      return Response.json(data);
+    } catch (error) {
+      if (error instanceof ConvexError) {
+        return badRequest(
+          typeof error.data === "string" ? error.data : "Invalid request",
+        );
+      }
+      console.error("familyapp: todos request failed", error);
+      return new Response("Internal error", { status: 500 });
+    }
   }),
 });
 

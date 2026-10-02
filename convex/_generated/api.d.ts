@@ -19,6 +19,7 @@ import type * as lib_briefing from "../lib/briefing.js";
 import type * as lib_dates from "../lib/dates.js";
 import type * as lib_pin from "../lib/pin.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
+import type * as lib_todos from "../lib/todos.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as overview from "../overview.js";
@@ -27,6 +28,7 @@ import type * as rewards from "../rewards.js";
 import type * as seed from "../seed.js";
 import type * as taskInstances from "../taskInstances.js";
 import type * as tasks from "../tasks.js";
+import type * as todos from "../todos.js";
 import type * as users from "../users.js";
 
 import type {
@@ -47,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   "lib/dates": typeof lib_dates;
   "lib/pin": typeof lib_pin;
   "lib/recurrence": typeof lib_recurrence;
+  "lib/todos": typeof lib_todos;
   "lib/tokens": typeof lib_tokens;
   "lib/validators": typeof lib_validators;
   overview: typeof overview;
@@ -55,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   taskInstances: typeof taskInstances;
   tasks: typeof tasks;
+  todos: typeof todos;
   users: typeof users;
 }>;
 
