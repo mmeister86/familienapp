@@ -269,12 +269,13 @@ export const create = mutation({
         pointsSnapshot: args.points,
       });
     } else {
+      // Generation window covers Upcoming's tomorrow..today+7.
       const dates = datesNeedingInstances(
         recurrence,
         args.startDate,
         args.endDate,
         today,
-        addDays(today, 6),
+        addDays(today, 7),
       );
       for (const date of dates) {
         if (await instanceExistsForDate(ctx.db, taskId, date)) {
@@ -423,12 +424,13 @@ export const update = mutation({
         });
       }
     } else {
+      // Generation window covers Upcoming's tomorrow..today+7.
       const dates = datesNeedingInstances(
         newRecurrence,
         newStartDate,
         newEndDate,
         today,
-        addDays(today, 6),
+        addDays(today, 7),
       );
       for (const date of dates) {
         if (await instanceExistsForDate(ctx.db, task._id, date)) {

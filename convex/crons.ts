@@ -6,13 +6,15 @@ import { datesNeedingInstances } from "./lib/recurrence";
 import { addDays, compareDates, todayBerlin } from "./lib/dates";
 
 // Hourly maintenance (idempotent): seed missing instances for the rolling
-// 7-day window (today..today+6) and mark past recurring opens as missed.
+// window (today..today+7, covering Upcoming's tomorrow..today+7)
+// and mark past calendar-recurring opens as missed.
 export const tick = internalMutation({
   args: {},
   returns: v.object({ ensured: v.number(), missed: v.number() }),
   handler: async (ctx) => {
     const today = todayBerlin();
-    const windowEnd = addDays(today, 6);
+    // Generation window covers Upcoming's tomorrow..today+7.
+    const windowEnd = addDays(today, 7);
     let ensured = 0;
     let missed = 0;
 
