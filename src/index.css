@@ -212,6 +212,15 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Used by the UIAble Sidebar (and the bottom nav) to hide scrollbars. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
