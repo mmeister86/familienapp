@@ -18,7 +18,7 @@ const PIN_PAD_DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
 // German login screen. Step 1 renders the hardcoded profiles with NO backend
 // call; the server is only contacted when a complete PIN is submitted.
 export function LoginPage() {
-  const { status, login } = useSession()
+  const { status, user, login } = useSession()
   const [selected, setSelected] = useState<Profile | null>(null)
   const [pin, setPin] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -139,7 +139,7 @@ export function LoginPage() {
   }, [selected, appendDigit, deleteDigit, submitPin, goBack])
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />
+    return <Navigate to={user?.role === "parent" ? "/overview" : "/"} replace />
   }
 
   if (status === "loading") {

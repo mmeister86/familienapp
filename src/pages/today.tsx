@@ -1,8 +1,9 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router"
 import { useQuery } from "convex/react"
 import { Users } from "lucide-react"
 import { api } from "../../convex/_generated/api"
+import { ChildDayCard } from "@/components/child-day-card"
 import { PointsCounter } from "@/components/points"
 import { TaskItem } from "@/components/task-item"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -82,6 +83,21 @@ export function TodayPage() {
     api.points.getBalance,
     token && isChild ? { token } : "skip",
   )
+  const overview = useQuery(
+    api.overview.children,
+    token && isChild ? { token } : "skip",
+  )
+  const ownSnapshot = overview?.[0]?.snapshot ?? null
+
+  // Track the current time so the card's stale check and day labels stay fresh
+  // while the page remains open. Date.now() must not be called during render
+  // (purity), so it is initialized lazily and refreshed on an interval. Mirrors
+  // the Overview page's tracking.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const overdueGroups = useMemo(
     () => (data === undefined ? [] : groupByPerson(data.overdue)),
@@ -101,6 +117,15 @@ export function TodayPage() {
       <section className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
         {isChild ? <PointsCardLink balance={balance?.balance} /> : null}
+        {ownSnapshot !== null ? (
+          <ChildDayCard
+            name={user?.name ?? ""}
+            color={user?.color ?? ""}
+            emoji={user?.emoji ?? ""}
+            snapshot={ownSnapshot}
+            now={now}
+          />
+        ) : null}
         <p className="text-muted-foreground">Alles erledigt! 🎉</p>
       </section>
     )
@@ -111,6 +136,16 @@ export function TodayPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
 
       {isChild ? <PointsCardLink balance={balance?.balance} /> : null}
+
+      {ownSnapshot !== null ? (
+        <ChildDayCard
+          name={user?.name ?? ""}
+          color={user?.color ?? ""}
+          emoji={user?.emoji ?? ""}
+          snapshot={ownSnapshot}
+          now={now}
+        />
+      ) : null}
 
       {data.overdue.length > 0 ? (
         <section aria-labelledby="today-overdue" className="flex flex-col gap-3">
