@@ -648,8 +648,10 @@ export const reject = mutation({
   },
 });
 
-// Reopen a done instance. Parents may undo anything; children only their own
-// completions. For afterCompletion tasks the auto-created successor is removed.
+// Reopen a done or pending instance. Parents may undo anything; children only
+// their own completions. Undoing an approved done books a reversing
+// transaction; pending never booked anything. For afterCompletion tasks the
+// auto-created successor is removed (done path only).
 export const undo = mutation({
   args: { token: v.string(), instanceId: v.id("taskInstances") },
   returns: v.object({ ok: v.boolean() }),
@@ -659,13 +661,14 @@ export const undo = mutation({
     if (instance === null) {
       throw new ConvexError("Task instance not found");
     }
-    if (instance.status !== "done") {
+    if (instance.status !== "done" && instance.status !== "pending") {
       throw new ConvexError("Only completed tasks can be undone");
     }
     if (caller.role !== "parent" && instance.completedBy !== caller._id) {
       throw new ConvexError("You cannot undo this task");
     }
 
+    const now = Date.now();
     await ctx.db.patch(instance._id, {
       status: "open",
       completedBy: undefined,
@@ -674,6 +677,32 @@ export const undo = mutation({
       reviewedAt: undefined,
       rejectNote: undefined,
     });
+
+    if (instance.status === "pending") {
+      // Pending booked no points and created no successor — nothing to reverse.
+      return { ok: true };
+    }
+
+    // done → open: reverse booked points, if any. Only approved instances
+    // (reviewedBy set) ever booked points; straight-to-done instances
+    // (family/parent/no-point tasks, incl. all pre-Phase-3 dones) book nothing.
+    // The reversal reuses the booking's refId so the pair nets to zero.
+    const points = instance.pointsSnapshot ?? 0;
+    if (
+      instance.reviewedBy !== undefined &&
+      points > 0 &&
+      instance.assigneeId !== undefined
+    ) {
+      await ctx.db.insert("pointTransactions", {
+        userId: instance.assigneeId,
+        delta: -points,
+        reason: "task",
+        refId: instance._id,
+        note: "Storno",
+        createdBy: caller._id,
+        createdAt: now,
+      });
+    }
 
     if (instance.date !== undefined) {
       const task = await ctx.db.get(instance.taskId);
