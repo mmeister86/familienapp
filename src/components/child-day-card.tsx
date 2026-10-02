@@ -112,7 +112,8 @@ export function ChildDayCard({
   }
 
   const today = todayBerlin(now)
-  const day = snapshot.days[dayIndex]
+  const day =
+    snapshot.days[Math.min(dayIndex, snapshot.days.length - 1)]
   const homework = snapshot.homework.filter((item) =>
     isWithinDays(item.dueDate, today, HOMEWORK_WINDOW_DAYS),
   )

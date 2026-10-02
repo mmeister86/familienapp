@@ -110,7 +110,7 @@ export default defineSchema({
     homework: v.array(homeworkValidator),
     exams: v.array(examValidator),
     sourceUpdatedAt: v.number(), // oldest fetch time of the sources behind it
-    receivedAt: v.number(), // backend receive time (staleness fallback)
+    receivedAt: v.number(), // backend receive time
   }).index("by_childSlug", ["childSlug"]),
 
   // AI/rule-based briefings pushed by the dashboard; cleaned up after 14 days.

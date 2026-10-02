@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 import { query } from "./_generated/server";
+import { visibleChildren } from "./lib/access";
 import { requireParent, requireUser } from "./lib/auth";
 import { preferredBriefingKind } from "./lib/briefing";
 import { addDays, berlinHour, todayBerlin } from "./lib/dates";
@@ -34,10 +35,9 @@ export const children = query({
   handler: async (ctx, args) => {
     const caller = await requireUser(ctx, args.token);
     const users = await ctx.db.query("users").collect();
-    const kids = users
-      .filter((u) => u.role === "child")
-      .filter((u) => caller.role === "parent" || u.slug === caller.slug)
-      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+    const kids = visibleChildren(users, caller).sort((a, b) =>
+      a.name.localeCompare(b.name, "de"),
+    );
     const result: Infer<typeof childOverviewValidator>[] = [];
     for (const kid of kids) {
       const snapshot = await ctx.db
