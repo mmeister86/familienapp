@@ -87,7 +87,9 @@ export const listHistory = query({
       .query("pointTransactions")
       .withIndex("by_user", (q) => q.eq("userId", target))
       .collect();
-    transactions.sort((a, b) => b.createdAt - a.createdAt);
+    transactions.sort(
+      (a, b) => b.createdAt - a.createdAt || b._creationTime - a._creationTime,
+    );
     const result: Transaction[] = [];
     for (const t of transactions) {
       const creator = await ctx.db.get(t.createdBy);

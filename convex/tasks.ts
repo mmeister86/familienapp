@@ -379,6 +379,8 @@ export const update = mutation({
     }
 
     // Delete future + undated open instances; past opens stay untouched.
+    // Pending instances intentionally survive: work done under the old terms
+    // stays reviewable, and the points snapshot is the audit trail.
     const today = todayBerlin();
     const instances = await ctx.db
       .query("taskInstances")
@@ -537,10 +539,14 @@ export const complete = mutation({
       assignee !== null && assignee.role === "child" && points > 0;
 
     if (needsApproval) {
+      // A re-completion after rejection starts fresh: clear all review fields
+      // so no stale reviewer/note survives (undo relies on reviewedBy ⟺ booked).
       await ctx.db.patch(instance._id, {
         status: "pending",
         completedBy: caller._id,
         completedAt: now,
+        reviewedBy: undefined,
+        reviewedAt: undefined,
         rejectNote: undefined,
       });
       // No successor while pending — `approve` creates it instead.
@@ -551,6 +557,9 @@ export const complete = mutation({
       status: "done",
       completedBy: caller._id,
       completedAt: now,
+      reviewedBy: undefined,
+      reviewedAt: undefined,
+      rejectNote: undefined,
     });
 
     await maybeCreateAfterCompletionSuccessor(ctx, instance, now);
