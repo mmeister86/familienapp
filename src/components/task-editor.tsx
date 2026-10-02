@@ -2,6 +2,7 @@ import { useCallback, useState } from "react"
 import type { FormEvent } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { cn } from "cn"
+import { nativeFieldClassName } from "@/components/chips"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -61,12 +62,6 @@ const MAX_TITLE_LENGTH = 200
 const MAX_NOTES_LENGTH = 2000
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-
-// Native select/textarea styled like the Input primitive (no shadcn
-// select/textarea components in the repo; native controls are fully
-// keyboard- and touch-accessible).
-const nativeFieldClassName =
-  "block w-full rounded-lg border border-border bg-input px-3 py-[.8rem] text-base placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50"
 
 type EditorForm = {
   title: string

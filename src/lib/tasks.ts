@@ -79,38 +79,47 @@ export function formatUpcomingHeader(dateStr: string, todayStr: string): string 
   return dateStr === addDaysString(todayStr, 1) ? `Morgen · ${label}` : label
 }
 
+const relativeTimeFormatDe = new Intl.RelativeTimeFormat("de", {
+  numeric: "auto",
+})
+
 // German relative time ("vor 5 Minuten") for a completedAt timestamp.
-// Picks the largest sensible unit; future timestamps read "in …".
+// Picks the largest sensible unit; future timestamps read "in …". Every unit
+// divides the raw second difference directly so chained rounding cannot skew
+// the unit boundaries (e.g. 89.5 minutes reads "vor 1 Stunde", not "vor 2
+// Stunden").
 export function formatRelativeTimeDe(
   timestamp: number,
   now: number = Date.now(),
 ): string {
-  const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" })
   const diffSeconds = Math.round((timestamp - now) / 1000)
   if (Math.abs(diffSeconds) < 60) {
-    return rtf.format(diffSeconds, "second")
+    return relativeTimeFormatDe.format(diffSeconds, "second")
   }
   const minutes = Math.round(diffSeconds / 60)
   if (Math.abs(minutes) < 60) {
-    return rtf.format(minutes, "minute")
+    return relativeTimeFormatDe.format(minutes, "minute")
   }
-  const hours = Math.round(minutes / 60)
+  const hours = Math.round(diffSeconds / 3600)
   if (Math.abs(hours) < 24) {
-    return rtf.format(hours, "hour")
+    return relativeTimeFormatDe.format(hours, "hour")
   }
-  const days = Math.round(hours / 24)
+  const days = Math.round(diffSeconds / 86400)
   if (Math.abs(days) < 7) {
-    return rtf.format(days, "day")
+    return relativeTimeFormatDe.format(days, "day")
   }
-  const weeks = Math.round(days / 7)
+  const weeks = Math.round(diffSeconds / 604800)
   if (Math.abs(weeks) < 5) {
-    return rtf.format(weeks, "week")
+    return relativeTimeFormatDe.format(weeks, "week")
   }
-  const months = Math.round(days / 30)
+  const months = Math.round(diffSeconds / 2592000)
   if (Math.abs(months) < 12) {
-    return rtf.format(months, "month")
+    return relativeTimeFormatDe.format(months, "month")
   }
-  return rtf.format(Math.round(days / 365), "year")
+  return relativeTimeFormatDe.format(
+    Math.round(diffSeconds / 31536000),
+    "year",
+  )
 }
 
 // One-line German detail for a recurrence ("Mo, Mi, Fr", "Monatstag 15",

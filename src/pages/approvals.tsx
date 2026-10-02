@@ -2,8 +2,13 @@ import { useState } from "react"
 import type { FormEvent, KeyboardEvent } from "react"
 import { Link } from "react-router"
 import { useMutation, useQuery } from "convex/react"
-import { Star } from "lucide-react"
+import { cn } from "cn"
 import { api } from "../../convex/_generated/api"
+import {
+  AssigneeChip,
+  PointsChip,
+  nativeFieldClassName,
+} from "@/components/chips"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,41 +27,6 @@ import {
 const MAX_REJECT_NOTE_LENGTH = 500
 
 const SAVE_FAILED_MESSAGE = "Speichern fehlgeschlagen. Bitte erneut versuchen."
-
-// Native textarea styled like the Input primitive (same as task-editor).
-const textareaClassName =
-  "block w-full rounded-lg border border-border bg-input px-3 py-[.8rem] text-base placeholder:text-muted-foreground focus:border-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50 min-h-20 resize-y"
-
-function AssigneeChip({ item }: { item: TaskPendingItem }) {
-  if (item.assigneeName === undefined) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-        Familie
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-      <span aria-hidden="true">{item.assigneeEmoji}</span>
-      {item.assigneeName}
-    </span>
-  )
-}
-
-function PointsChip({ item }: { item: TaskPendingItem }) {
-  if (item.pointsSnapshot === undefined) {
-    return <span className="text-muted-foreground">–</span>
-  }
-  return (
-    <span
-      aria-label={`${String(item.pointsSnapshot)} Punkte`}
-      className="inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium"
-    >
-      <Star aria-hidden="true" className="size-3" />
-      {item.pointsSnapshot}
-    </span>
-  )
-}
 
 function CompletedLabel({ item }: { item: TaskPendingItem }) {
   if (item.completedAt === undefined) {
@@ -144,7 +114,7 @@ export function ApprovalsPage() {
     if (busy || rejectTarget === null) {
       return
     }
-    if (rejectNote.length > MAX_REJECT_NOTE_LENGTH) {
+    if (rejectNote.trim().length > MAX_REJECT_NOTE_LENGTH) {
       setRejectError(
         `Die Notiz darf höchstens ${String(MAX_REJECT_NOTE_LENGTH)} Zeichen haben.`,
       )
@@ -224,8 +194,15 @@ export function ApprovalsPage() {
                     </p>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                    <AssigneeChip item={item} />
-                    <PointsChip item={item} />
+                    <AssigneeChip
+                      name={item.assigneeName}
+                      emoji={item.assigneeEmoji}
+                    />
+                    {item.pointsSnapshot === undefined ? (
+                      <span className="text-muted-foreground">–</span>
+                    ) : (
+                      <PointsChip points={item.pointsSnapshot} />
+                    )}
                     <CompletedLabel item={item} />
                     {item.date !== undefined ? (
                       <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
@@ -299,10 +276,17 @@ export function ApprovalsPage() {
                         ) : null}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <AssigneeChip item={item} />
+                        <AssigneeChip
+                          name={item.assigneeName}
+                          emoji={item.assigneeEmoji}
+                        />
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <PointsChip item={item} />
+                        {item.pointsSnapshot === undefined ? (
+                          <span className="text-muted-foreground">–</span>
+                        ) : (
+                          <PointsChip points={item.pointsSnapshot} />
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                         <span className="flex flex-wrap items-center gap-1.5">
@@ -354,7 +338,7 @@ export function ApprovalsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent showCloseButton={!busy} className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {rejectTarget === null
@@ -376,12 +360,23 @@ export function ApprovalsPage() {
                 placeholder="Was soll anders gemacht werden?"
                 rows={4}
                 maxLength={MAX_REJECT_NOTE_LENGTH + 1}
-                aria-invalid={rejectNote.length > MAX_REJECT_NOTE_LENGTH}
-                className={textareaClassName}
+                aria-invalid={
+                  rejectNote.trim().length > MAX_REJECT_NOTE_LENGTH
+                }
+                aria-describedby={
+                  rejectError !== null
+                    ? "approvals-reject-note-error"
+                    : undefined
+                }
+                className={cn(nativeFieldClassName, "min-h-20 resize-y")}
               />
             </label>
             {rejectError !== null ? (
-              <p role="alert" className="text-sm text-destructive">
+              <p
+                id="approvals-reject-note-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
                 {rejectError}
               </p>
             ) : null}

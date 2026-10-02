@@ -1,8 +1,9 @@
 import { useState } from "react"
 import { useMutation } from "convex/react"
 import { cn } from "cn"
-import { Check, Clock, Star } from "lucide-react"
+import { Check, Clock } from "lucide-react"
 import { api } from "../../convex/_generated/api"
+import { AssigneeChip, PointsChip } from "@/components/chips"
 import { useSession } from "@/hooks/useSession"
 import { formatShortDay, type TaskInstanceItem } from "@/lib/tasks"
 
@@ -133,24 +134,12 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
                 Wartet auf Freigabe
               </span>
             ) : null}
-            {item.assigneeName ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                <span aria-hidden="true">{item.assigneeEmoji}</span>
-                {item.assigneeName}
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                Familie
-              </span>
-            )}
+            <AssigneeChip
+              name={item.assigneeName}
+              emoji={item.assigneeEmoji}
+            />
             {item.pointsSnapshot !== undefined ? (
-              <span
-                aria-label={`${String(item.pointsSnapshot)} Punkte`}
-                className="inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium"
-              >
-                <Star aria-hidden="true" className="size-3" />
-                {item.pointsSnapshot}
-              </span>
+              <PointsChip points={item.pointsSnapshot} />
             ) : null}
             {overdue && item.date !== undefined && !done ? (
               <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
@@ -161,8 +150,9 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
               <button
                 type="button"
                 disabled={busy}
+                aria-label={`Zurückziehen: ${item.taskTitle}`}
                 onClick={() => void withdraw()}
-                className="rounded-md px-1 py-0.5 text-xs font-medium text-muted-foreground underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                className="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 min-h-8"
               >
                 Zurückziehen
               </button>
