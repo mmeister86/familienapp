@@ -1,0 +1,512 @@
+# Family App — Implementation Plan
+
+> Companion app to the wall dashboard (`ghcr.io/mmeister86/familydash`).
+> Handles family tasks (incl. recurring), kid rewards with points, and replaces Things 3 as the to-do source for the wall dashboard.
+> For parents it is also the mobile view of the wall dashboard's aggregated data: timetables, homework, exams, appointments, meals and the AI briefings.
+
+---
+
+## 1. Goals & non-goals
+
+**Goals**
+
+- Installable PWA for 4 fixed family members (2 parents, 2 kids)
+- Tasks for any member or the whole family, one-off or recurring
+- Kid tasks earn points, but only after a parent approves
+- Kids redeem points for rewards; parents approve redemptions
+- Real-time updates everywhere (Convex reactivity)
+- HTTP endpoint for the wall dashboard → replaces Things Cloud + the Rust binary in the dashboard repo
+- Parent overview per kid: today's timetable incl. cancellations/substitutions, homework, exams, appointments, ordered meal
+- Morning and evening AI briefing from the wall dashboard, readable in the app
+
+**Non-goals (for now)**
+
+- Fetching beste.schule, Google Calendar, Vielfaltmenü or Gemini **from this app**: the wall dashboard stays the only fetcher and pushes its aggregated data into Convex (§8.2)
+- Shopping list, weather
+- Push notifications (later; iOS supports web push for home-screen PWAs)
+- Sign-up, multi-family, password reset, App Store
+- Importing existing Things tasks (re-enter manually)
+
+---
+
+## 2. Stack
+
+| Layer           | Choice                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| Frontend        | Vite + React + TypeScript                                                                                      |
+| Styling         | Tailwind CSS v4 + shadcn/ui                                                                                    |
+| UI components   | [UIAble](https://uiable.com/components) (MIT, free tier only), installed via shadcn CLI registry `@uiable`     |
+| Routing         | React Router                                                                                                   |
+| PWA             | `vite-plugin-pwa` (autoUpdate, static assets only)                                                             |
+| Dates           | `date-fns` + `@date-fns/tz` (all "day" logic in `Europe/Berlin`)                                               |
+| Backend         | Convex, self-hosted via the Coolify Convex template                                                            |
+| Package manager | pnpm                                                                                                           |
+| Hosting         | Coolify on Hetzner: frontend (Nginx container) + Convex backend + Convex dashboard in the same Coolify project |
+
+**UIAble notes**
+
+- Built on shadcn/ui **with Base UI primitives** (not Radix) → initialise shadcn with the Base UI variant so UIAble components and shadcn primitives match
+- Add the `@uiable` registry to `components.json` as described in https://uiable.com/doc/cli, then install with `npx shadcn add @uiable/<component>`
+- Do **not** use `@uiable-pro` (paid, token-protected)
+- UIAble targets Next.js: replace any `next/link`, `next/image` or `next/navigation` imports with React Router / plain `<img>`; `"use client"` lines can stay or go
+- Extra deps it brings: `@base-ui/react`, `framer-motion`, `iconsax-reactjs`, `lucide-react`
+- UIAble also offers an MCP server (https://uiable.com/doc/mcp); optional for the coding agent to look up components
+
+**Domains**
+
+- `familienapp.matthias.lol` → PWA
+- `familybackend.matthias.lol` → Convex backend API (port 3210)
+- `familybackend-http.matthias.lol` → Convex HTTP actions (port 3211)
+- `familybackend-dash.matthias.lol` → Convex dashboard (protect it, e.g. Coolify basic auth or only reachable via VPN)
+
+**Environments**
+
+- **Dev:** local Convex backend via Docker (Convex self-hosted `docker-compose.yml`) + `pnpm dev`
+- **Prod:** Coolify. Functions deployed with `npx convex deploy` using `CONVEX_SELF_HOSTED_URL` + `CONVEX_SELF_HOSTED_ADMIN_KEY`
+
+---
+
+## 3. Users & auth
+
+### Fixed users
+
+Profiles are hardcoded in the frontend (`src/profiles.ts`) **and** seeded into Convex. Login is by `slug`, so the login screen needs no backend call.
+
+| slug       | name     | role   | PIN length | color              | emoji |
+| ---------- | -------- | ------ | ---------- | ------------------ | ----- |
+| `matthias` | Matthias | parent | 6          | `#2563eb` (blue)   | 🧔    |
+| `anica`    | Anica    | parent | 6          | `#7c3aed` (violet) | 👩    |
+| `lukas`    | Lukas    | child  | 4          | `#16a34a` (green)  | 🧒    |
+| `hannah`   | Hannah   | child  | 4          | `#e11d48` (rose)   | 👧    |
+
+Colors and emojis are arbitrary defaults (nobody has preferences); **no yellow for Anica**. Colors must stay distinguishable in light and dark mode and readable as text/badge color.
+
+### Seeding
+
+- PINs live **only** in Convex env vars: `PIN_MATTHIAS`, `PIN_ANICA`, `PIN_LUKAS`, `PIN_HANNAH` (set via `npx convex env set`)
+- `seed:run` (internal action) hashes each PIN with PBKDF2 (Web Crypto, random salt, ≥100k iterations) and upserts the user by `slug`
+- Re-running the seed updates PINs (that's the "change PIN" flow)
+
+### Login flow
+
+1. User taps avatar → enters PIN
+2. `auth.login({ slug, pin })` (**action**): checks lockout → verifies PIN hash → creates session via internal mutation → returns `token`
+3. Token is stored in `localStorage`, valid for 180 days (kid devices stay logged in)
+4. `auth.logout({ token })` deletes the session
+
+### Security rules (non-negotiable)
+
+- The Convex URL is public → **every public query/mutation takes `token` and checks it server-side**
+- Helpers in `convex/lib/auth.ts`:
+  - `requireUser(ctx, token)` → returns user or throws
+  - `requireParent(ctx, token)` → same, plus role check
+- Session token: 32 random bytes, base64url, generated inside the action (true randomness)
+- **Brute-force protection:** 5 wrong PINs → user locked for 15 minutes (`failedAttempts`, `lockedUntil` on user)
+- Never return `pinHash`/`pinSalt` from any function
+
+---
+
+## 4. Data model (`convex/schema.ts`)
+
+```ts
+users: {
+  slug: string,                 // "matthias" | "anica" | "lukas" | "hannah"
+  name: string,
+  role: "parent" | "child",
+  color: string,
+  emoji: string,
+  pinHash: string,
+  pinSalt: string,
+  failedAttempts: number,
+  lockedUntil?: number,
+} // index: by_slug
+
+sessions: {
+  userId: Id<"users">,
+  token: string,
+  createdAt: number,
+  expiresAt: number,
+} // index: by_token
+
+tasks: {                        // template / definition
+  title: string,
+  notes?: string,
+  assigneeId?: Id<"users">,     // undefined = whole family
+  points?: number,              // only allowed when assignee is a child
+  recurrence: Recurrence,
+  startDate: string,            // "YYYY-MM-DD" (Berlin)
+  endDate?: string,
+  active: boolean,
+  createdBy: Id<"users">,
+  createdAt: number,
+} // index: by_active
+
+taskInstances: {               // concrete occurrence
+  taskId: Id<"tasks">,
+  assigneeId?: Id<"users">,     // copied from task
+  date?: string,                // "YYYY-MM-DD"; undefined = undated one-off ("anytime")
+  status: "open" | "pending" | "done" | "missed",
+  pointsSnapshot?: number,      // points at creation time
+  completedBy?: Id<"users">,
+  completedAt?: number,
+  reviewedBy?: Id<"users">,
+  reviewedAt?: number,
+  rejectNote?: string,          // set when a parent rejects; status goes back to "open"
+} // indexes: by_task_date, by_assignee_date, by_status, by_date
+
+pointTransactions: {
+  userId: Id<"users">,
+  delta: number,                // + for tasks/bonus, − for rewards
+  reason: "task" | "reward" | "manual",
+  refId?: string,               // instance or redemption id
+  note?: string,
+  createdBy: Id<"users">,
+  createdAt: number,
+} // index: by_user
+
+rewards: {
+  title: string,
+  emoji?: string,
+  cost: number,
+  active: boolean,
+}
+
+redemptions: {
+  rewardId: Id<"rewards">,
+  userId: Id<"users">,
+  costSnapshot: number,
+  status: "requested" | "approved" | "rejected",
+  requestedAt: number,
+  reviewedBy?: Id<"users">,
+  reviewedAt?: number,
+} // indexes: by_user, by_status
+
+childSnapshots: {              // pushed by the wall dashboard, one doc per kid, replaced on every push
+  childSlug: string,            // "lukas" | "hannah"
+  days: ChildDay[],             // today … today+6
+  homework: { subject: string, text: string, dueDate: string }[],
+  exams: { subject: string, date: string, text?: string }[],
+  sourceUpdatedAt: number,      // when the dashboard fetched the data
+  receivedAt: number,
+} // index: by_childSlug
+
+briefings: {                    // AI summaries generated by the wall dashboard
+  kind: "morning" | "evening",
+  date: string,                 // "YYYY-MM-DD" the briefing is for
+  text: string,                 // Markdown
+  generatedAt: number,
+} // index: by_date_kind; cron deletes entries older than 14 days
+```
+
+```ts
+type ChildDay = {
+  date: string; // "YYYY-MM-DD"
+  timetable: {
+    period: number;
+    start?: string; // "08:00"
+    end?: string;
+    subject: string;
+    room?: string;
+    teacher?: string;
+    change?: {
+      type: "cancelled" | "substitution" | "roomChange" | "other";
+      note?: string;
+    };
+  }[];
+  events: {
+    title: string;
+    start: string;
+    end?: string;
+    allDay: boolean;
+    calendar?: string;
+  }[];
+  meal?: { title: string; description?: string };
+};
+```
+
+Validators for `ChildDay` etc. live in `convex/lib/validators.ts` and are used for both the schema and the ingest endpoint.
+
+**Balance** = sum of `pointTransactions.delta` for the user (computed in a query; data volume is tiny).
+**Available balance** = balance − costs of `requested` redemptions.
+
+---
+
+## 5. Recurrence
+
+```ts
+type Recurrence =
+  | { kind: "none"; dueDate?: string } // one-off, optional due date
+  | { kind: "daily" }
+  | { kind: "weekly"; days: number[] } // ISO weekdays 1=Mon … 7=Sun
+  | { kind: "monthly"; dayOfMonth: number } // clamp to last day of month
+  | { kind: "afterCompletion"; everyNDays: number }; // next one N days after completion
+```
+
+**Instance generation**
+
+- One-off: create exactly one instance when the task is created
+- `afterCompletion`: create the first instance on `startDate`; when an instance becomes `done`, create the next one at `completion date + N`
+- `daily` / `weekly` / `monthly`: Convex cron job `ensureInstances` runs **hourly** and makes sure instances exist for **today … today+6** (Berlin time) for every active task
+  - Must be idempotent (check `by_task_date` before inserting)
+  - Hourly instead of daily → no DST / UTC headaches
+- Editing a task: delete future `open` instances of that task and regenerate
+
+**Rollover**
+
+- Cron `markMissed` (same hourly job): recurring instances with `date < today` and status `open` → `missed`
+- One-off instances never become `missed`; if overdue, they show at the top of "Today" as overdue (Things-style)
+
+---
+
+## 6. Business rules
+
+| Action                                        | Who                 | Result                                                                      |
+| --------------------------------------------- | ------------------- | --------------------------------------------------------------------------- |
+| Complete own task                             | anyone              | parent task / no points → `done`; child task with points → `pending`        |
+| Complete family task (`assigneeId` undefined) | anyone              | `done`, no points                                                           |
+| Approve pending                               | parent              | `done` + `pointTransactions` +points                                        |
+| Reject pending                                | parent              | back to `open` with `rejectNote`                                            |
+| Undo completion                               | completer or parent | `done`/`pending` → `open`; if points were booked, add reversing transaction |
+| Request reward                                | child               | only if available balance ≥ cost → `requested`                              |
+| Approve redemption                            | parent              | `approved` + transaction −cost                                              |
+| Reject redemption                             | parent              | `rejected`                                                                  |
+| Manual points (bonus/penalty)                 | parent              | `manual` transaction with note                                              |
+| Create/edit/delete tasks & rewards            | parent              | —                                                                           |
+
+**Visibility**
+
+- Parents see everything
+- Kids see their own tasks + family tasks, their own points/history, and all active rewards
+- Kid overviews (`childSnapshots`): parents see both; **each kid sees only their own** (`childSlug === user.slug`, enforced in the query, never via a client-side filter). Kids must not be able to read their sibling's timetable, meals, homework or appointments
+- Briefings: parents only (they cover the whole family)
+
+---
+
+## 7. Screens
+
+**All users**
+
+- **Login:** 4 big avatar tiles → PIN pad
+- **Today:** overdue → today's tasks, grouped by person (parents) or just own (kids). Big tap targets, check animation, pending badge
+- **Anytime:** undated one-offs (Things "Anytime" equivalent)
+- **Upcoming:** next 7 days
+
+**Kids**
+
+- **Mein Tag** card on Today (own data only): today's timetable incl. changes, homework due soon, upcoming exams, own appointments, ordered meal; day switcher like the parents' overview
+- Big points counter on Today 🏆
+- **Rewards:** grid of rewards, "Einlösen" button, own request status
+- **History:** own point transactions
+
+**Parents**
+
+- **Overview (parents' start screen):**
+  - Briefing card on top: shows the morning briefing until 14:00, the evening briefing after it's available; tap to expand
+  - One card per kid, ordered school → appointments → meal (same order as on the wall dashboard):
+    - Today's timetable, changes highlighted (cancelled struck through, substitutions marked)
+    - Homework due soon, upcoming exams (next 7 days)
+    - Today's appointments
+    - Ordered meal
+  - Day switcher: today / tomorrow / +6 days (timetable, events, meal)
+  - "Stand: HH:MM" per card; warning if data is older than 2 hours (Unraid/dashboard offline)
+- **Approvals:** pending task completions + reward requests, approve/reject in one tap. Badge with count in the nav
+- **Tasks:** list of task definitions, create/edit (title, notes, assignee, points if kid, recurrence picker, start/end date)
+- **Rewards admin:** CRUD
+- **Points:** balances per kid, manual adjustment
+
+**UI language:** German. **Code language:** English.
+
+### Responsive layout (phone **and** laptop are first-class)
+
+|                   | Phone (< 768 px) | Tablet (768–1023 px) | Laptop (≥ 1024 px)                     |
+| ----------------- | ---------------- | -------------------- | -------------------------------------- |
+| Navigation        | Bottom nav       | Collapsible sidebar  | Persistent sidebar (UIAble Sidebar)    |
+| Parents' overview | Cards stacked    | 2 columns            | Briefing + both kid cards side by side |
+| Today             | One list         | One list             | Grouped by person in columns           |
+| Approvals         | Card list        | Card list            | Table with inline approve/reject       |
+| Task editor       | Bottom drawer    | Dialog               | Dialog                                 |
+
+- Every screen must be fully usable with mouse + keyboard: visible focus states, hover states, `Enter` submits, `Esc` closes dialogs
+- Keyboard shortcuts on laptop: `n` new task (parents), `g h` Today, `g o` Overview, `g a` Approvals; shortcut hint via UIAble `Kbd`
+- Content max width on wide screens (no stretched lines), but overview uses the full width for columns
+- Installable as PWA on desktop too (Chrome/Edge/Safari "Install app" / "Add to Dock")
+- Test every phase at 390 px, 820 px and 1440 px width
+
+---
+
+## 8. Wall dashboard integration
+
+Two directions, both via HTTP actions in `convex/http.ts` on the Convex **site** URL (`familybackend-http.matthias.lol`). The dashboard on Unraid only makes outbound requests, so Unraid never needs to be reachable from the internet.
+
+```
+Unraid (wall dashboard)  ──POST /ingest/*──▶  Convex  ◀──reactive──  PWA (parents)
+                         ◀──GET /todos─────
+```
+
+### 8.1 Pull: `GET /todos` (dashboard reads tasks)
+
+- Auth: `Authorization: Bearer <DASHBOARD_TOKEN>` (Convex env var)
+- Response:
+
+```json
+{
+  "date": "2026-10-02",
+  "overdue": [{ "title": "…", "assignee": "lukas" }],
+  "people": [
+    {
+      "slug": "lukas",
+      "name": "Lukas",
+      "color": "#…",
+      "points": 120,
+      "tasks": [{ "title": "Zimmer aufräumen", "status": "open", "points": 10 }]
+    }
+  ],
+  "family": [{ "title": "Müll rausbringen", "status": "open" }]
+}
+```
+
+- Read-only, no PII beyond names/titles
+- Optional query param `?days=N` (default 1, max 7): include the following days too (evening briefing needs tomorrow)
+
+### 8.2 Push: `POST /ingest/*` (dashboard writes aggregated data)
+
+- Auth: `Authorization: Bearer <INGEST_TOKEN>` (separate from `DASHBOARD_TOKEN`: one token reads, the other writes)
+- `POST /ingest/child`: body = one `childSnapshots` payload (without `receivedAt`). Validated, then the kid's doc is **replaced** (upsert by `childSlug`)
+- `POST /ingest/briefing`: body = `{ kind, date, text, generatedAt }`. Upsert by `date` + `kind`
+- Invalid payload → `400` with validation error; wrong token → `401`
+- Endpoints call internal mutations; there is no public write path
+
+**Dashboard side (dashboard repo)**
+
+- After each successful refresh of beste.schule / Hannah's hardcoded timetable + school calendar / Google Calendar / Vielfaltmenü: map the existing per-kid card data into the `ChildDay` contract and `POST /ingest/child` (at most every 15 min per kid)
+- After generating a briefing: `POST /ingest/briefing`
+- Push failures are logged and retried on the next cycle; they must never break the wall display
+- Env vars: `FAMILY_APP_SITE_URL`, `FAMILY_APP_INGEST_TOKEN`
+
+---
+
+## 9. Deployment
+
+**Frontend `Dockerfile`** (multi-stage)
+
+1. `node:22-alpine`: `pnpm install --frozen-lockfile`, `ARG VITE_CONVEX_URL`, `pnpm build`
+2. `nginx:alpine`: serve `dist/`, SPA fallback to `index.html`, `Cache-Control: no-cache` for `index.html`, `sw.js` and `manifest.webmanifest`, long cache for hashed assets
+
+⚠️ `VITE_CONVEX_URL` must be set as a **build arg** in Coolify, not as a runtime env var.
+
+**Convex**
+
+- Coolify template: set domains `familybackend.matthias.lol` → backend (3210), `familybackend-http.matthias.lol` → site (3211), `familybackend-dash.matthias.lol` → dashboard
+- Backend env in Coolify: `CONVEX_CLOUD_ORIGIN=https://familybackend.matthias.lol`, `CONVEX_SITE_ORIGIN=https://familybackend-http.matthias.lol`
+- Frontend build arg: `VITE_CONVEX_URL=https://familybackend.matthias.lol`
+- Dashboard repo: `FAMILY_APP_SITE_URL=https://familybackend-http.matthias.lol`
+- Generate admin key in the backend container (`./generate_admin_key.sh`)
+- Local `.env.local` (gitignored): `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY`
+- Prod env vars in Convex: `PIN_*`, `DASHBOARD_TOKEN`, `INGEST_TOKEN`
+
+**PWA & branding**
+
+- No custom branding: use UIAble's default theme (colors, radius, typography) as-is; light + dark mode via system setting
+- App name: "Familienapp" (short_name "Familie")
+- Icons: simple generated placeholder (e.g. house or family glyph from `lucide-react` on the theme's primary color), 192, 512, maskable
+- `manifest`: name, short_name, `display: standalone`, theme/background colors from the UIAble theme
+- `apple-touch-icon` + iOS meta tags
+- Service worker caches static assets only, never Convex traffic
+
+---
+
+## 10. Phases
+
+Work one phase at a time. Each phase ends with typecheck + lint passing and the acceptance criteria met.
+
+### Phase 0 — Scaffold & deploy
+
+- [ ] Vite + React + TS project, Tailwind v4, React Router, pnpm
+- [ ] shadcn/ui initialised with Base UI primitives, `@uiable` registry configured (§2 UIAble notes)
+- [ ] App shell with responsive navigation: bottom nav (phone) / sidebar (laptop) (§7)
+- [ ] `convex/` initialised against local Docker backend; `docker-compose.yml` for dev in repo
+- [ ] `vite-plugin-pwa` with manifest + placeholder icons
+- [ ] `Dockerfile` + `nginx.conf` as in §9
+- [ ] Scripts: `dev`, `build`, `typecheck`, `lint`
+- [ ] README with dev setup + deploy steps
+
+**Done when:** empty app shell is live on `familienapp.matthias.lol`, installable on iPhone and on the laptop, navigation switches correctly between phone and laptop layout, and the app is connected to the prod Convex backend.
+
+### Phase 1 — Auth
+
+- [ ] Schema: `users`, `sessions`
+- [ ] `seed:run` internal action (PBKDF2, env PINs, upsert by slug)
+- [ ] `auth.login` action, `auth.logout` mutation, `auth.me` query
+- [ ] Lockout logic (5 fails → 15 min)
+- [ ] `requireUser` / `requireParent` helpers
+- [ ] `src/profiles.ts`, login screen (avatars + PIN pad), session hook, protected routes, logout
+
+**Done when:** all 4 users can log in, wrong PIN ×5 locks the user, a call without valid token is rejected, reload keeps the session.
+
+### Phase 2 — Tasks & recurrence
+
+- [ ] Schema: `tasks`, `taskInstances`
+- [ ] Berlin date helpers (`todayBerlin()`, `addDays`, weekday/month calculations) with unit tests
+- [ ] Recurrence engine (pure functions, unit tested): "which dates in range X need an instance?"
+- [ ] Cron `ensureInstances` + `markMissed` (hourly, idempotent)
+- [ ] Task CRUD (parents), regeneration on edit
+- [ ] Screens: Today, Anytime, Upcoming, Tasks admin, task editor with recurrence picker
+- [ ] Completing tasks (without points yet), undo
+
+**Done when:** daily/weekly/monthly/afterCompletion/one-off tasks appear on the right days, editing regenerates future instances, missed recurring tasks are marked, real-time updates work across two devices.
+
+### Phase 3 — Approval & points
+
+- [ ] Schema: `pointTransactions`
+- [ ] Kid completion with points → `pending`
+- [ ] Approvals screen: approve (books points) / reject (with note)
+- [ ] Undo with reversing transaction
+- [ ] Balance query, points counter for kids, history screen
+- [ ] Manual adjustment (parents)
+
+**Done when:** a kid completes a task, a parent sees it instantly in Approvals, approval updates the kid's points live, rejection shows the note to the kid.
+
+### Phase 4 — Rewards
+
+- [ ] Schema: `rewards`, `redemptions`
+- [ ] Rewards admin (parents)
+- [ ] Rewards grid + request (kids), available-balance check
+- [ ] Redemption approval in the Approvals screen
+
+**Done when:** a kid can request a reward only with enough available points, and approval deducts the points.
+
+### Phase 5 — Dashboard data in the app (both repos)
+
+- [ ] Schema: `childSnapshots`, `briefings` + shared validators (§4)
+- [ ] `POST /ingest/child` and `POST /ingest/briefing` with `INGEST_TOKEN` (§8.2)
+- [ ] Cleanup cron for briefings older than 14 days
+- [ ] Queries: `overview.children` (parents: both kids, kids: only own snapshot), `overview.latestBriefing` (parents only)
+- [ ] Overview screen (§7) as parents' start screen, incl. day switcher and staleness warning
+- [ ] "Mein Tag" card on the kids' Today screen
+- [ ] **Dashboard repo:** mapper from existing card data → `ChildDay`, push after refresh, push briefings, env vars, failure-safe
+
+**Done when:** after a dashboard refresh, both kids' timetable/homework/exams/appointments/meal and the latest briefing show up live in the app for parents; Lukas sees only his data, Hannah only hers (verified by calling the query with each kid's token); kids can't read briefings; stopping the dashboard shows the staleness warning after 2 hours.
+
+> Phase 5 only depends on Phase 1 and can be pulled forward if the overview is more urgent than rewards.
+
+### Phase 6 — Things switch (dashboard repo)
+
+- [ ] `GET /todos` HTTP action in this repo (§8.1) + `DASHBOARD_TOKEN`
+- [ ] In the dashboard repo: replace the Things Cloud source with `/todos`
+- [ ] Run both sources in parallel for a few days (feature flag / env switch)
+- [ ] Briefing prompt (morning + evening) gets the `/todos` data: open/overdue tasks per person, pending approvals count, kids' points. Morning: "what's due today", evening: "what's still open + what's due tomorrow"
+- [ ] Remove the Rust binary, Things config/env vars and related build steps from the dashboard repo; update Dockerfile and README
+
+**Done when:** the wall dashboard shows tasks from the family app and the dashboard image no longer contains any Things code.
+
+### Phase 7 — Polish (optional)
+
+- [ ] Completion animation / confetti for kids
+- [ ] Offline banner when Convex disconnects
+- [ ] Web push notifications (pending approvals for parents, new tasks for kids)
+
+---
+
+## 11. Open points
+
+None. All decisions made; anything unclear during implementation → ask (see `AGENTS.md`).
