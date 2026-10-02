@@ -80,8 +80,12 @@ VITE_CONVEX_URL=https://familybackend.matthias.lol
 
 Lokaler Test des Images:
 
+> ⚠️ Ohne `--build-arg` backt das Dockerfile den **Prod**-Endpoint
+> `https://familybackend.matthias.lol` ins Bundle (Default). Für einen lokalen
+> Test daher explizit auf das Dev-Backend zeigen:
+
 ```sh
-docker build -t familienapp .
+docker build --build-arg VITE_CONVEX_URL=http://127.0.0.1:3210 -t familienapp .
 docker run --rm -p 8080:80 familienapp
 ```
 
