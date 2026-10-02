@@ -58,6 +58,21 @@ function LoadingState() {
   )
 }
 
+// Kid-only card linking to the Points page. The balance stays exposed to
+// screen readers (no overriding aria-label); the sr-only suffix announces the
+// link target.
+function PointsCardLink({ balance }: { balance: number | undefined }) {
+  return (
+    <Link
+      to="/points"
+      className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      <PointsCounter balance={balance} />
+      <span className="sr-only">Zu den Punkten</span>
+    </Link>
+  )
+}
+
 export function TodayPage() {
   const { token, user } = useSession()
   const data = useQuery(api.taskInstances.listToday, token ? { token } : "skip")
@@ -85,15 +100,7 @@ export function TodayPage() {
     return (
       <section className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
-        {isChild ? (
-          <Link
-            to="/points"
-            aria-label="Zu den Punkten"
-            className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <PointsCounter balance={balance?.balance} />
-          </Link>
-        ) : null}
+        {isChild ? <PointsCardLink balance={balance?.balance} /> : null}
         <p className="text-muted-foreground">Alles erledigt! 🎉</p>
       </section>
     )
@@ -103,15 +110,7 @@ export function TodayPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
 
-      {isChild ? (
-        <Link
-          to="/points"
-          aria-label="Zu den Punkten"
-          className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <PointsCounter balance={balance?.balance} />
-        </Link>
-      ) : null}
+      {isChild ? <PointsCardLink balance={balance?.balance} /> : null}
 
       {data.overdue.length > 0 ? (
         <section aria-labelledby="today-overdue" className="flex flex-col gap-3">

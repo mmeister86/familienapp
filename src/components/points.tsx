@@ -29,8 +29,10 @@ export function PointsCounter({
 // Transaction list (newest first), shared by the kid view and the parent view.
 export function PointsHistory({
   transactions,
+  emptyText = "Noch keine Punkte. Erledige Aufgaben, um Punkte zu sammeln!",
 }: {
   transactions: PointTransaction[] | undefined
+  emptyText?: string
 }) {
   if (transactions === undefined) {
     return (
@@ -43,11 +45,7 @@ export function PointsHistory({
   }
 
   if (transactions.length === 0) {
-    return (
-      <p className="text-muted-foreground">
-        Noch keine Punkte. Erledige Aufgaben, um Punkte zu sammeln!
-      </p>
-    )
+    return <p className="text-muted-foreground">{emptyText}</p>
   }
 
   return (
@@ -61,7 +59,7 @@ export function PointsHistory({
           >
             <div className="flex min-w-0 flex-col gap-0.5">
               <p className="text-base font-medium">
-                {REASON_LABELS[transaction.reason]}
+                {REASON_LABELS[transaction.reason] ?? transaction.reason}
               </p>
               {transaction.note ? (
                 <p className="text-sm break-words text-muted-foreground">

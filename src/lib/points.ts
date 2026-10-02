@@ -47,15 +47,6 @@ const timeFormat = new Intl.DateTimeFormat("de-DE", {
   minute: "2-digit",
 })
 
-function berlinDayString(timestamp: number): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Berlin",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(timestamp))
-}
-
 // German date ("3. Okt.", year added when not the current year) plus the time
 // when the transaction is from today ("3. Okt., 14:30").
 export function formatTransactionDate(
@@ -63,7 +54,7 @@ export function formatTransactionDate(
   now: Date = new Date(),
 ): string {
   const date = new Date(createdAt)
-  const day = berlinDayString(createdAt)
+  const day = todayBerlinString(date)
   const today = todayBerlinString(now)
   const base =
     day.slice(0, 4) === today.slice(0, 4)

@@ -84,7 +84,12 @@ function ParentPointsView({
   // Selected kid for the history below; defaults to the first kid (balances
   // arrive name-sorted from the server).
   const [selectedKidId, setSelectedKidId] = useState<Id<"users"> | null>(null)
-  const effectiveKidId = selectedKidId ?? balances?.[0]?.userId ?? null
+  // Guard against a stale selection (kid vanished from balances): fall back
+  // to the first kid instead of querying history for an unknown user.
+  const selectedValid =
+    balances?.some((kid) => kid.userId === selectedKidId) ?? false
+  const effectiveKidId =
+    (selectedValid ? selectedKidId : balances?.[0]?.userId) ?? null
   const selectedHistory = useQuery(
     api.points.listHistory,
     effectiveKidId ? { token, userId: effectiveKidId } : "skip",
@@ -126,6 +131,9 @@ function ParentPointsView({
     document
       .getElementById("points-history")
       ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    document
+      .getElementById("points-history-heading")
+      ?.focus({ preventScroll: true })
   }
 
   const handleAdjustSubmit = (event: FormEvent<HTMLFormElement>): void => {
@@ -208,6 +216,7 @@ function ParentPointsView({
                     variant="outline"
                     size="sm"
                     className="min-h-11 flex-1"
+                    aria-label={`Verlauf von ${kid.name} ansehen`}
                     onClick={() => viewHistory(kid)}
                   >
                     Verlauf ansehen
@@ -216,6 +225,7 @@ function ParentPointsView({
                     type="button"
                     size="sm"
                     className="min-h-11 flex-1"
+                    aria-label={`Punkte für ${kid.name} anpassen`}
                     onClick={() => openAdjust(kid)}
                   >
                     Anpassen
@@ -230,11 +240,12 @@ function ParentPointsView({
       <section
         id="points-history"
         aria-labelledby="points-history-heading"
-        className="flex scroll-mt-4 flex-col gap-3"
+        className="flex scroll-mt-16 flex-col gap-3"
       >
         <h2
           id="points-history-heading"
-          className="text-lg font-semibold tracking-tight"
+          tabIndex={-1}
+          className="text-lg font-semibold tracking-tight focus:outline-none"
         >
           Verlauf
         </h2>
@@ -265,7 +276,10 @@ function ParentPointsView({
                 )
               })}
             </div>
-            <PointsHistory transactions={selectedHistory} />
+            <PointsHistory
+              transactions={selectedHistory}
+              emptyText="Noch keine Punkte für dieses Kind."
+            />
           </>
         )}
       </section>
