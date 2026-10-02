@@ -57,4 +57,18 @@ export default defineSchema({
     .index("by_assignee_date", ["assigneeId", "date"])
     .index("by_status", ["status"])
     .index("by_date", ["date"]),
+
+  pointTransactions: defineTable({
+    userId: v.id("users"),
+    delta: v.number(), // + for tasks/bonus, − for rewards/penalty
+    reason: v.union(
+      v.literal("task"),
+      v.literal("reward"),
+      v.literal("manual"),
+    ),
+    refId: v.optional(v.string()), // instance id (reason "task"); redemption id later
+    note: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
 });
