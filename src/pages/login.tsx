@@ -25,15 +25,37 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   // Ref mirror of `submitting` so rapid taps/keys cannot double-submit.
   const submittingRef = useRef(false)
+  // Synchronous accumulator for digit entry: handlers read the latest value
+  // instead of a stale render-scope closure, so two taps/keys before a
+  // re-render cannot lose a digit. `pin` state mirrors it for rendering the
+  // dots; every mutation goes through setPinState so the two cannot drift.
+  const pinRef = useRef("")
+
+  const setPinState = useCallback((next: string): void => {
+    pinRef.current = next
+    setPin(next)
+  }, [])
+
+  // Focus target for step transitions. Selecting an avatar unmounts the
+  // focused tile (and going back unmounts the PIN step), which would drop
+  // keyboard focus to <body>; moving it to the new step's heading keeps
+  // keyboard/screen-reader users oriented. Explicit effect instead of the
+  // autoFocus prop: native autofocus only fires during page load, not for
+  // dynamically mounted elements.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const stepKey = selected === null ? null : selected.slug
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [stepKey])
 
   const goBack = useCallback((): void => {
     if (submittingRef.current) {
       return
     }
     setSelected(null)
-    setPin("")
+    setPinState("")
     setError(null)
-  }, [])
+  }, [setPinState])
 
   const submitPin = useCallback(
     async (profile: Profile, code: string): Promise<void> => {
@@ -53,13 +75,13 @@ export function LoginPage() {
             ? submitError.message
             : FALLBACK_LOGIN_ERROR,
         )
-        setPin("")
+        setPinState("")
       } finally {
         submittingRef.current = false
         setSubmitting(false)
       }
     },
-    [login],
+    [login, setPinState],
   )
 
   const appendDigit = useCallback(
@@ -67,29 +89,27 @@ export function LoginPage() {
       if (selected === null || submittingRef.current) {
         return
       }
-      if (pin.length >= selected.pinLength) {
+      const prev = pinRef.current
+      if (prev.length >= selected.pinLength) {
         return
       }
-      const next = pin + digit
+      const next = prev + digit
       setError(null)
-      setPin(next)
+      setPinState(next)
       if (next.length === selected.pinLength) {
         void submitPin(selected, next)
       }
     },
-    [selected, pin, submitPin],
+    [selected, submitPin, setPinState],
   )
 
   const deleteDigit = useCallback((): void => {
-    if (selected === null || submittingRef.current) {
-      return
-    }
-    if (pin.length === 0) {
+    if (submittingRef.current || pinRef.current.length === 0) {
       return
     }
     setError(null)
-    setPin(pin.slice(0, -1))
-  }, [selected, pin])
+    setPinState(pinRef.current.slice(0, -1))
+  }, [setPinState])
 
   // Physical keyboard: digits append, Backspace deletes, Enter submits a
   // complete PIN, Escape returns to the avatar grid.
@@ -105,9 +125,9 @@ export function LoginPage() {
         event.preventDefault()
         deleteDigit()
       } else if (event.key === "Enter") {
-        if (pin.length === selected.pinLength) {
+        if (pinRef.current.length === selected.pinLength) {
           event.preventDefault()
-          void submitPin(selected, pin)
+          void submitPin(selected, pinRef.current)
         }
       } else if (event.key === "Escape") {
         event.preventDefault()
@@ -116,7 +136,7 @@ export function LoginPage() {
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [selected, pin, appendDigit, deleteDigit, submitPin, goBack])
+  }, [selected, appendDigit, deleteDigit, submitPin, goBack])
 
   if (status === "authenticated") {
     return <Navigate to="/" replace />
@@ -153,7 +173,12 @@ export function LoginPage() {
           className="flex w-full flex-col gap-6"
         >
           <div className="flex flex-col items-center gap-1 text-center">
-            <h1 id="login-heading" className="text-2xl font-semibold">
+            <h1
+              id="login-heading"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-2xl font-semibold"
+            >
               Wer meldet sich an?
             </h1>
             <p className="text-sm text-muted-foreground">
@@ -167,7 +192,7 @@ export function LoginPage() {
                   type="button"
                   onClick={() => {
                     setSelected(profile)
-                    setPin("")
+                    setPinState("")
                     setError(null)
                   }}
                   className="flex w-full flex-col items-center gap-3 rounded-2xl border-2 bg-card p-6 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
@@ -211,7 +236,12 @@ export function LoginPage() {
             >
               {selected.emoji}
             </span>
-            <h1 id="pin-heading" className="text-2xl font-semibold">
+            <h1
+              id="pin-heading"
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-2xl font-semibold"
+            >
               Hallo, {selected.name}!
             </h1>
             <p className="text-sm text-muted-foreground">Gib deine PIN ein.</p>

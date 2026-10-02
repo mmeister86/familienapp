@@ -1,9 +1,13 @@
 import { Component, Fragment } from "react"
 import type { ReactNode } from "react"
 import { Navigate, Outlet } from "react-router"
-import { ConvexError } from "convex/values"
 import { LoaderCircle } from "lucide-react"
 import { useSession } from "@/hooks/useSession"
+import {
+  AUTH_ERROR_CODES,
+  AUTH_ERROR_MESSAGES,
+  getAuthErrorCode,
+} from "../../convex/lib/authErrors"
 import { clearSessionToken } from "@/lib/session"
 
 // Route guard for the authenticated app shell. Loading shows a centered
@@ -42,25 +46,29 @@ type SessionErrorBoundaryProps = {
 }
 
 type SessionErrorBoundaryState = {
-  // Bumped after each recovery so the subtree remounts and session hooks
-  // re-initialise from the (now cleared) localStorage.
+  // Bumped after each recovery so the errored subtree (which threw during
+  // render) remounts fresh; the shared token store has already flipped every
+  // session hook to unauthenticated, so the remount lands on the login flow.
   resetKey: number
   // Transient: set in the render phase so React does not retry the throwing
   // subtree before componentDidCatch schedules the remount.
   recovering: boolean
-  unexpectedError: Error | null
+  unexpectedError: unknown
 }
 
-// The `me` query throws ConvexError("Invalid or expired session") for stale
-// tokens (expired session, reset dev database, deleted user), and useQuery
-// rethrows query errors during render. Without a boundary that crashes the
-// whole app to a blank screen with no recovery path.
-function isExpiredSessionError(error: Error): boolean {
-  const candidates = [error.message]
-  if (error instanceof ConvexError && typeof error.data === "string") {
-    candidates.push(error.data)
+// The `me` query fails with the invalid-session code for stale tokens
+// (expired session, reset dev database, deleted user), and useQuery rethrows
+// query errors during render. Without a boundary that crashes the whole app
+// to a blank screen with no recovery path.
+function isExpiredSessionError(error: unknown): boolean {
+  if (getAuthErrorCode(error) === AUTH_ERROR_CODES.invalidSession) {
+    return true
   }
-  return candidates.some((text) => text.includes("Invalid or expired session"))
+  // Legacy fallback: the Task 4 string message.
+  return (
+    error instanceof Error &&
+    error.message.includes(AUTH_ERROR_MESSAGES.invalidSession)
+  )
 }
 
 // App-wide guard mounted around the routes in App.tsx: a stale token clears
@@ -76,7 +84,7 @@ export class SessionErrorBoundary extends Component<
   }
 
   static getDerivedStateFromError(
-    error: Error,
+    error: unknown,
   ): Partial<SessionErrorBoundaryState> | null {
     if (isExpiredSessionError(error)) {
       return { recovering: true }
@@ -84,7 +92,7 @@ export class SessionErrorBoundary extends Component<
     return { unexpectedError: error }
   }
 
-  componentDidCatch(error: Error): void {
+  componentDidCatch(error: unknown): void {
     if (!isExpiredSessionError(error)) {
       return
     }

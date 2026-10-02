@@ -1,12 +1,16 @@
-import { useCallback, useState } from "react"
+import { useCallback } from "react"
 import { useAction, useMutation, useQuery } from "convex/react"
-import { ConvexError } from "convex/values"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
 import {
+  AUTH_ERROR_CODES,
+  AUTH_ERROR_MESSAGES,
+  getAuthErrorCode,
+} from "../../convex/lib/authErrors"
+import {
   clearSessionToken,
-  getSessionToken,
   setSessionToken,
+  useSessionToken,
 } from "@/lib/session"
 
 // Public profile of the signed-in user (no PIN or lockout fields).
@@ -30,31 +34,33 @@ export type UseSessionResult = {
   logout: () => Promise<void>
 }
 
-// Map backend login failures to German UI messages. The Convex client
-// rethrows server ConvexErrors with the data preserved, but the message may
-// carry a prefix, so match on substrings of both.
+// Map backend login failures to German UI messages. Prefer the stable error
+// code; fall back to the legacy Task 4 message substrings for errors whose
+// structured data is unavailable.
 function toLoginErrorMessage(error: unknown): string {
-  const candidates: string[] = []
-  if (error instanceof ConvexError) {
-    candidates.push(String(error.data ?? ""), error.message)
-  } else if (error instanceof Error) {
-    candidates.push(error.message)
-  }
-  const haystack = candidates.join(" ")
-  if (haystack.includes("Account locked")) {
+  const code = getAuthErrorCode(error)
+  if (code === AUTH_ERROR_CODES.accountLocked) {
     return "Konto ist gesperrt. Bitte in 15 Minuten erneut versuchen."
   }
-  if (haystack.includes("Invalid PIN")) {
+  if (code === AUTH_ERROR_CODES.invalidPin) {
+    return "Falsche PIN, bitte erneut versuchen."
+  }
+  const message = error instanceof Error ? error.message : ""
+  if (message.includes(AUTH_ERROR_MESSAGES.accountLocked)) {
+    return "Konto ist gesperrt. Bitte in 15 Minuten erneut versuchen."
+  }
+  if (message.includes(AUTH_ERROR_MESSAGES.invalidPin)) {
     return "Falsche PIN, bitte erneut versuchen."
   }
   return "Anmeldung fehlgeschlagen. Bitte erneut versuchen."
 }
 
-// Token-based session against the Convex auth functions. The token is kept in
-// React state (lazily initialised from localStorage) and the user profile is
-// loaded reactively via the `me` query.
+// Token-based session against the Convex auth functions. The token lives in
+// the shared session store, so login/logout in any instance (or another tab)
+// updates every useSession() caller; the user profile loads reactively via
+// the `me` query.
 export function useSession(): UseSessionResult {
-  const [token, setToken] = useState<string | null>(() => getSessionToken())
+  const token = useSessionToken()
   const me = useQuery(api.auth.me, token ? { token } : "skip")
   const loginAction = useAction(api.auth.login)
   const logoutMutation = useMutation(api.auth.logout)
@@ -69,7 +75,6 @@ export function useSession(): UseSessionResult {
         throw new Error(toLoginErrorMessage(error), { cause: error })
       }
       setSessionToken(sessionToken)
-      setToken(sessionToken)
     },
     [loginAction],
   )
@@ -84,7 +89,6 @@ export function useSession(): UseSessionResult {
       }
     }
     clearSessionToken()
-    setToken(null)
   }, [token, logoutMutation])
 
   // No token: known-unauthenticated without a backend roundtrip. Token

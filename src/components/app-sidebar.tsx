@@ -97,6 +97,9 @@ export function AppSidebar() {
               variant="ghost"
               size="sm"
               onClick={() => void handleLogout()}
+              // In icon-collapsed mode the text is hidden and the icon is
+              // aria-hidden, so the accessible name must come from here.
+              aria-label="Abmelden"
               className="justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
             >
               <LogOut aria-hidden="true" />

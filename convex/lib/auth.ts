@@ -1,6 +1,10 @@
-import { ConvexError } from "convex/values";
 import type { DatabaseReader } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import {
+  AUTH_ERROR_CODES,
+  AUTH_ERROR_MESSAGES,
+  authError,
+} from "./authErrors";
 
 // Brute-force protection: lock the user after this many failed PIN attempts.
 export const MAX_FAILED_ATTEMPTS = 5;
@@ -51,11 +55,17 @@ export async function requireUser(
     .withIndex("by_token", (q) => q.eq("token", token))
     .unique();
   if (session === null || session.expiresAt <= Date.now()) {
-    throw new ConvexError("Invalid or expired session");
+    throw authError(
+      AUTH_ERROR_CODES.invalidSession,
+      AUTH_ERROR_MESSAGES.invalidSession,
+    );
   }
   const user = await ctx.db.get(session.userId);
   if (user === null) {
-    throw new ConvexError("Invalid or expired session");
+    throw authError(
+      AUTH_ERROR_CODES.invalidSession,
+      AUTH_ERROR_MESSAGES.invalidSession,
+    );
   }
   return user;
 }
@@ -67,7 +77,10 @@ export async function requireParent(
 ): Promise<Doc<"users">> {
   const user = await requireUser(ctx, token);
   if (user.role !== "parent") {
-    throw new ConvexError("Parent access required");
+    throw authError(
+      AUTH_ERROR_CODES.parentRequired,
+      AUTH_ERROR_MESSAGES.parentRequired,
+    );
   }
   return user;
 }

@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {
   action,
@@ -14,6 +14,11 @@ import {
   SESSION_DURATION_MS,
   toPublicUser,
 } from "./lib/auth";
+import {
+  AUTH_ERROR_CODES,
+  AUTH_ERROR_MESSAGES,
+  authError,
+} from "./lib/authErrors";
 import { encodeBase64Url, verifyPin } from "./lib/pin";
 
 // Session token length (256 bits of randomness, base64url-encoded).
@@ -106,7 +111,10 @@ export const recordSuccessfulLogin = internalMutation({
     if (user === null) {
       // User deleted after PIN verification; same message as a wrong PIN
       // so callers cannot distinguish the cases.
-      throw new ConvexError("Invalid PIN");
+      throw authError(
+        AUTH_ERROR_CODES.invalidPin,
+        AUTH_ERROR_MESSAGES.invalidPin,
+      );
     }
     const now = Date.now();
     await ctx.db.patch(user._id, {
@@ -134,18 +142,27 @@ export const login = action({
       slug: args.slug,
     });
     if (user === null) {
-      throw new ConvexError("Invalid PIN");
+      throw authError(
+        AUTH_ERROR_CODES.invalidPin,
+        AUTH_ERROR_MESSAGES.invalidPin,
+      );
     }
     if (user.lockedUntil !== undefined && user.lockedUntil > Date.now()) {
       // Locked: fail without verifying the PIN or touching counters.
-      throw new ConvexError("Account locked");
+      throw authError(
+        AUTH_ERROR_CODES.accountLocked,
+        AUTH_ERROR_MESSAGES.accountLocked,
+      );
     }
     const ok = await verifyPin(args.pin, user.pinHash, user.pinSalt);
     if (!ok) {
       await ctx.runMutation(internal.auth.recordFailedLogin, {
         userId: user._id,
       });
-      throw new ConvexError("Invalid PIN");
+      throw authError(
+        AUTH_ERROR_CODES.invalidPin,
+        AUTH_ERROR_MESSAGES.invalidPin,
+      );
     }
     const token = generateSessionToken();
     await ctx.runMutation(internal.auth.recordSuccessfulLogin, {
