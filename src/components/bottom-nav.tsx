@@ -1,10 +1,20 @@
 import { cn } from "cn"
+import { useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router"
 import { isNavItemActive, navItems } from "@/lib/nav"
 
 /** Phone-only bottom navigation (`md` and up use the sidebar). */
 export function BottomNav() {
   const { pathname } = useLocation()
+  const activeRef = useRef<HTMLLIElement>(null)
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({
+      inline: "center",
+      block: "nearest",
+      behavior: "smooth",
+    })
+  }, [pathname])
 
   return (
     <nav
@@ -16,17 +26,21 @@ export function BottomNav() {
           const active = isNavItemActive(item, pathname)
 
           return (
-            <li key={item.url} className="min-w-16 flex-1">
+            <li
+              key={item.url}
+              ref={active ? activeRef : undefined}
+              className="shrink-0"
+            >
               <Link
                 to={item.url}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   active && "bg-primary/10 text-primary",
                 )}
               >
                 <item.icon className="size-5" />
-                <span className="max-w-full truncate">{item.title}</span>
+                <span>{item.title}</span>
               </Link>
             </li>
           )
