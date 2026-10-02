@@ -1,5 +1,7 @@
+import { useQuery } from "convex/react"
 import { House, LogOut } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router"
+import { api } from "../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import {
   Sidebar,
@@ -24,12 +26,18 @@ import { isNavItemActive, isNavItemVisible, navItems } from "@/lib/nav"
 export function AppSidebar() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { user, logout } = useSession()
+  const { user, token, logout } = useSession()
   // Unknown/loading role renders no destinations (see isNavItemVisible) so
   // parent items never flash to kids while the session resolves.
   const visibleItems = navItems.filter((item) =>
     isNavItemVisible(item, user?.role),
   )
+  // Parent-only query: guarded by the role check so kids never trigger it.
+  const pendingCount =
+    useQuery(
+      api.taskInstances.listPending,
+      token && user?.role === "parent" ? { token } : "skip",
+    )?.length ?? 0
 
   const handleLogout = async (): Promise<void> => {
     await logout()
@@ -53,17 +61,32 @@ export function AppSidebar() {
             <SidebarMenu>
               {visibleItems.map((item) => {
                 const active = isNavItemActive(item, pathname)
+                const showBadge =
+                  item.url === "/approvals" && pendingCount > 0
 
                 return (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton
                       isActive={active}
                       aria-current={active ? "page" : undefined}
+                      aria-label={
+                        showBadge
+                          ? `Freigaben, ${String(pendingCount)} offen`
+                          : undefined
+                      }
                       tooltip={item.title}
                       render={<Link to={item.url} />}
                     >
                       <item.icon />
                       <span>{item.title}</span>
+                      {showBadge ? (
+                        <span
+                          aria-hidden="true"
+                          className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-semibold text-primary-foreground tabular-nums group-data-[collapsible=icon]:hidden"
+                        >
+                          {pendingCount}
+                        </span>
+                      ) : null}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )

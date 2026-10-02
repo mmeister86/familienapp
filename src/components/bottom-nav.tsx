@@ -1,19 +1,27 @@
 import { cn } from "cn"
+import { useQuery } from "convex/react"
 import { useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router"
+import { api } from "../../convex/_generated/api"
 import { useSession } from "@/hooks/useSession"
 import { isNavItemActive, isNavItemVisible, navItems } from "@/lib/nav"
 
 /** Phone-only bottom navigation (`md` and up use the sidebar). */
 export function BottomNav() {
   const { pathname } = useLocation()
-  const { user } = useSession()
+  const { user, token } = useSession()
   const activeRef = useRef<HTMLLIElement>(null)
   // Unknown/loading role renders no destinations (see isNavItemVisible) so
   // parent items never flash to kids while the session resolves.
   const visibleItems = navItems.filter((item) =>
     isNavItemVisible(item, user?.role),
   )
+  // Parent-only query: guarded by the role check so kids never trigger it.
+  const pendingCount =
+    useQuery(
+      api.taskInstances.listPending,
+      token && user?.role === "parent" ? { token } : "skip",
+    )?.length ?? 0
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({
@@ -31,6 +39,7 @@ export function BottomNav() {
       <ul className="no-scrollbar flex items-stretch gap-1 overflow-x-auto px-1 py-1">
         {visibleItems.map((item) => {
           const active = isNavItemActive(item, pathname)
+          const showBadge = item.url === "/approvals" && pendingCount > 0
 
           return (
             <li
@@ -41,13 +50,26 @@ export function BottomNav() {
               <Link
                 to={item.url}
                 aria-current={active ? "page" : undefined}
+                aria-label={
+                  showBadge
+                    ? `Freigaben, ${String(pendingCount)} offen`
+                    : undefined
+                }
                 className={cn(
-                  "flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   active && "bg-primary/10 text-primary",
                 )}
               >
                 <item.icon className="size-5" />
                 <span>{item.title}</span>
+                {showBadge ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-0 right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-semibold text-primary-foreground tabular-nums"
+                  >
+                    {pendingCount}
+                  </span>
+                ) : null}
               </Link>
             </li>
           )
