@@ -1,8 +1,9 @@
 # Familienapp
 
 Familien-Organisation (Aufgaben, Punkte, Belohnungen) als installierbare PWA mit
-selbst gehostetem Convex-Backend. Maßgebliche Quelle für Scope, Datenmodell und
-Phasen ist [`.docs/PLAN.md`](.docs/PLAN.md).
+selbst gehostetem Convex-Backend. Maßgeblich für Scope, Datenmodell und Phasen ist
+[`.docs/PLAN.md`](.docs/PLAN.md); das bindende Schnittstellen-Contract für Backend
+und Wall-Dashboard ist [`.docs/FAMILY_APP.md`](.docs/FAMILY_APP.md).
 
 ## Voraussetzungen
 

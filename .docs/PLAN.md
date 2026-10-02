@@ -338,6 +338,8 @@ type Recurrence =
 
 Two directions, both via HTTP actions in `convex/http.ts` on the Convex **site** URL (`familybackend-http.matthias.lol`). The dashboard on Unraid only makes outbound requests, so Unraid never needs to be reachable from the internet.
 
+The binding interface contract for both directions is `.docs/FAMILY_APP.md` (request/response shapes, auth tokens); this section only describes the integration and deployment wiring.
+
 ```
 Unraid (wall dashboard)  ──POST /ingest/*──▶  Convex  ◀──reactive──  PWA (parents)
                          ◀──GET /todos─────
@@ -346,25 +348,7 @@ Unraid (wall dashboard)  ──POST /ingest/*──▶  Convex  ◀──reactiv
 ### 8.1 Pull: `GET /todos` (dashboard reads tasks)
 
 - Auth: `Authorization: Bearer <DASHBOARD_TOKEN>` (Convex env var)
-- Response:
-
-```json
-{
-  "date": "2026-10-02",
-  "overdue": [{ "title": "…", "assignee": "lukas" }],
-  "people": [
-    {
-      "slug": "lukas",
-      "name": "Lukas",
-      "color": "#…",
-      "points": 120,
-      "tasks": [{ "title": "Zimmer aufräumen", "status": "open", "points": 10 }]
-    }
-  ],
-  "family": [{ "title": "Müll rausbringen", "status": "open" }]
-}
-```
-
+- Authoritative response contract: `.docs/FAMILY_APP.md` (`GET /todos`)
 - Read-only, no PII beyond names/titles
 - Optional query param `?days=N` (default 1, max 7): include the following days too (evening briefing needs tomorrow)
 
