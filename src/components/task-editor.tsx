@@ -39,6 +39,7 @@ type FieldErrors = Partial<
   Record<
     | "title"
     | "notes"
+    | "points"
     | "startDate"
     | "endDate"
     | "weeklyDays"
@@ -71,6 +72,7 @@ type EditorForm = {
   title: string
   notes: string
   assigneeId: string
+  points: string
   kind: Recurrence["kind"]
   weeklyDays: number[]
   dayOfMonth: string
@@ -87,6 +89,7 @@ function initialForm(task: TaskAdminItem | null): EditorForm {
     title: task?.title ?? "",
     notes: task?.notes ?? "",
     assigneeId: task?.assigneeId ?? "",
+    points: task?.points === undefined ? "" : String(task.points),
     kind: recurrence?.kind ?? "none",
     weeklyDays:
       recurrence?.kind === "weekly" ? [...recurrence.days].sort() : [],
@@ -128,6 +131,14 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
     [open],
   )
 
+  // Points only exist for child assignees (backend rule) — the field is
+  // hidden for "Familie" and parent assignees. Role comes from the directory
+  // query, never from hardcoded slugs or names.
+  const showPoints =
+    form.assigneeId !== "" &&
+    directory?.find((member) => member._id === form.assigneeId)?.role ===
+      "child"
+
   // Reset the form on the closed -> open transition. Done during render
   // (React's "adjust state when props change" pattern): the session check
   // keeps reactive query updates from wiping in-progress edits while open.
@@ -168,6 +179,12 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
     }
     if (form.notes.length > MAX_NOTES_LENGTH) {
       errors.notes = `Die Notizen dürfen höchstens ${String(MAX_NOTES_LENGTH)} Zeichen haben.`
+    }
+    if (showPoints && form.points !== "") {
+      const points = Number(form.points)
+      if (!Number.isInteger(points) || points < 0) {
+        errors.points = "Punkte müssen eine ganze Zahl ≥ 0 sein."
+      }
     }
     if (form.startDate === "") {
       errors.startDate = "Bitte ein Startdatum wählen."
@@ -227,6 +244,15 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
       const recurrence = buildRecurrence()
       const trimmedTitle = form.title.trim()
       const trimmedNotes = form.notes.trim()
+      // Hidden field (family/parent assignee) submits no points; while the
+      // directory is still loading the role is unknown, so edits keep the
+      // stored value instead of clearing it.
+      const pointsValue =
+        directory === undefined
+          ? undefined
+          : showPoints && form.points !== ""
+            ? Number(form.points)
+            : undefined
       if (task === null) {
         await createTask({
           token,
@@ -235,6 +261,7 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
           ...(form.assigneeId === ""
             ? {}
             : { assigneeId: form.assigneeId as Id<"users"> }),
+          ...(pointsValue === undefined ? {} : { points: pointsValue }),
           recurrence,
           startDate: form.startDate,
           ...(form.endDate === "" ? {} : { endDate: form.endDate }),
@@ -249,6 +276,9 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
             form.assigneeId === ""
               ? null
               : (form.assigneeId as Id<"users">),
+          ...(directory === undefined
+            ? {}
+            : { points: pointsValue ?? null }),
           recurrence,
           startDate: form.startDate,
           endDate: form.endDate === "" ? null : form.endDate,
@@ -370,6 +400,39 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
           )}
         </select>
       </label>
+
+      {showPoints ? (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="task-editor-points" className="text-sm font-medium">
+            Punkte
+          </label>
+          <Input
+            id="task-editor-points"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={1}
+            value={form.points}
+            onChange={(event) => updateField("points", event.target.value)}
+            placeholder="z. B. 5"
+            aria-invalid={fieldErrors.points !== undefined}
+            aria-describedby={
+              fieldErrors.points !== undefined
+                ? "task-editor-points-error"
+                : undefined
+            }
+          />
+          {fieldErrors.points !== undefined ? (
+            <p
+              id="task-editor-points-error"
+              role="alert"
+              className="text-sm font-normal text-destructive"
+            >
+              {fieldErrors.points}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <label
         htmlFor="task-editor-recurrence"
