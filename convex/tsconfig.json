@@ -11,6 +11,8 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    // Node types for `process.env` in actions (Convex injects env vars there).
+    "types": ["node"],
 
     /* These compiler options are required by Convex */
     "target": "ESNext",

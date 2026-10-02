@@ -10,6 +10,8 @@
 
 import type * as hello from "../hello.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_pin from "../lib/pin.js";
+import type * as seed from "../seed.js";
 
 import type {
   ApiFromModules,
@@ -20,6 +22,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   hello: typeof hello;
   "lib/auth": typeof lib_auth;
+  "lib/pin": typeof lib_pin;
+  seed: typeof seed;
 }>;
 
 /**
