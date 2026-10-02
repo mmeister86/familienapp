@@ -115,7 +115,9 @@ export const listToday = query({
     const user = await requireUser(ctx, args.token);
     const today = todayBerlin();
 
-    // Overdue: one-off (kind "none"), dated in the past, still open.
+    // Overdue: one-off (kind "none") and afterCompletion instances, dated in
+    // the past, still open. afterCompletion instances never miss, so past-due
+    // ones appear as overdue until completed.
     const openCandidates = await ctx.db
       .query("taskInstances")
       .withIndex("by_status", (q) => q.eq("status", "open"))
@@ -128,10 +130,16 @@ export const listToday = query({
       if (!visibleTo(user, instance)) {
         continue;
       }
+      const task = await ctx.db.get(instance.taskId);
+      if (
+        task === null ||
+        (task.recurrence.kind !== "none" &&
+          task.recurrence.kind !== "afterCompletion")
+      ) {
+        continue;
+      }
       const item = await toItem(ctx.db, instance);
-      // One-off instances never become missed, so past-due one-offs stay open
-      // and surface here; past recurring opens are marked missed by the cron.
-      if (item !== null && !item.recurring) {
+      if (item !== null) {
         overdueItems.push(item);
       }
     }

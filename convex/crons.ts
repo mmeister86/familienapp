@@ -54,8 +54,9 @@ export const tick = internalMutation({
       }
     }
 
-    // markMissed: past dated opens of recurring tasks only.
-    // One-off instances NEVER become missed.
+    // markMissed: past dated opens of calendar-recurring tasks only.
+    // One-off and afterCompletion instances never become missed; afterCompletion
+    // instances survive until completed, whenever that is.
     const opens = await ctx.db
       .query("taskInstances")
       .withIndex("by_status", (q) => q.eq("status", "open"))
@@ -65,7 +66,11 @@ export const tick = internalMutation({
     );
     for (const instance of pastDated) {
       const task = await ctx.db.get(instance.taskId);
-      if (task === null || task.recurrence.kind === "none") {
+      if (
+        task === null ||
+        task.recurrence.kind === "none" ||
+        task.recurrence.kind === "afterCompletion"
+      ) {
         continue;
       }
       await ctx.db.patch(instance._id, { status: "missed" });
