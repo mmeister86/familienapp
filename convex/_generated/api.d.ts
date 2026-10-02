@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authErrors from "../lib/authErrors.js";
 import type * as lib_dates from "../lib/dates.js";
@@ -25,6 +26,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  crons: typeof crons;
   "lib/auth": typeof lib_auth;
   "lib/authErrors": typeof lib_authErrors;
   "lib/dates": typeof lib_dates;
