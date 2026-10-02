@@ -16,12 +16,19 @@ export function BottomNav() {
   const visibleItems = navItems.filter((item) =>
     isNavItemVisible(item, user?.role),
   )
-  // Parent-only query: guarded by the role check so kids never trigger it.
+  // Parent-only queries: guarded by the role check so kids never trigger
+  // them. The Approvals badge sums pending tasks and reward requests.
   const pendingCount =
     useQuery(
       api.taskInstances.listPending,
       token && user?.role === "parent" ? { token } : "skip",
     )?.length ?? 0
+  const requestedCount =
+    useQuery(
+      api.rewards.listRequested,
+      token && user?.role === "parent" ? { token } : "skip",
+    )?.length ?? 0
+  const approvalsCount = pendingCount + requestedCount
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({
@@ -39,7 +46,7 @@ export function BottomNav() {
       <ul className="no-scrollbar flex items-stretch gap-1 overflow-x-auto px-1 py-1">
         {visibleItems.map((item) => {
           const active = isNavItemActive(item, pathname)
-          const showBadge = item.url === "/approvals" && pendingCount > 0
+          const showBadge = item.url === "/approvals" && approvalsCount > 0
 
           return (
             <li
@@ -52,7 +59,7 @@ export function BottomNav() {
                 aria-current={active ? "page" : undefined}
                 aria-label={
                   showBadge
-                    ? `Freigaben, ${String(pendingCount)} offen`
+                    ? `Freigaben, ${String(approvalsCount)} offen`
                     : undefined
                 }
                 className={cn(
@@ -67,7 +74,7 @@ export function BottomNav() {
                     aria-hidden="true"
                     className="absolute top-0 right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-semibold text-primary-foreground tabular-nums"
                   >
-                    {pendingCount}
+                    {approvalsCount}
                   </span>
                 ) : null}
               </Link>

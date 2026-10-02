@@ -32,12 +32,19 @@ export function AppSidebar() {
   const visibleItems = navItems.filter((item) =>
     isNavItemVisible(item, user?.role),
   )
-  // Parent-only query: guarded by the role check so kids never trigger it.
+  // Parent-only queries: guarded by the role check so kids never trigger
+  // them. The Approvals badge sums pending tasks and reward requests.
   const pendingCount =
     useQuery(
       api.taskInstances.listPending,
       token && user?.role === "parent" ? { token } : "skip",
     )?.length ?? 0
+  const requestedCount =
+    useQuery(
+      api.rewards.listRequested,
+      token && user?.role === "parent" ? { token } : "skip",
+    )?.length ?? 0
+  const approvalsCount = pendingCount + requestedCount
 
   const handleLogout = async (): Promise<void> => {
     await logout()
@@ -62,7 +69,7 @@ export function AppSidebar() {
               {visibleItems.map((item) => {
                 const active = isNavItemActive(item, pathname)
                 const showBadge =
-                  item.url === "/approvals" && pendingCount > 0
+                  item.url === "/approvals" && approvalsCount > 0
 
                 return (
                   <SidebarMenuItem key={item.url}>
@@ -71,7 +78,7 @@ export function AppSidebar() {
                       aria-current={active ? "page" : undefined}
                       aria-label={
                         showBadge
-                          ? `Freigaben, ${String(pendingCount)} offen`
+                          ? `Freigaben, ${String(approvalsCount)} offen`
                           : undefined
                       }
                       tooltip={item.title}
@@ -84,7 +91,7 @@ export function AppSidebar() {
                           aria-hidden="true"
                           className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-semibold text-primary-foreground tabular-nums group-data-[collapsible=icon]:hidden"
                         >
-                          {pendingCount}
+                          {approvalsCount}
                         </span>
                       ) : null}
                     </SidebarMenuButton>
