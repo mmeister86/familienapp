@@ -11,10 +11,13 @@ import {
 const FAMILY_SOURCE = {
   sourceKey: "family",
   name: "Familie",
-  kind: "ics" as const,
-  url: "https://example.test/family.ics",
   color: "#2563eb",
-  sortOrder: 0,
+  panel: "column" as const,
+  order: 0,
+  personIds: [] as Id<"users">[],
+  urlEnvKey: "FAMILY_CALENDAR_URL",
+  enabled: true,
+  intervalMs: 300000,
 };
 
 async function saveFamilySource(
@@ -28,22 +31,23 @@ async function saveFamilySource(
   });
 }
 
-async function insertCommittedImport(
+async function insertReadyImport(
   t: ReturnType<typeof setupCalendarTest>,
   sourceId: Id<"calendarSources">,
-  generation: number,
+  configGeneration: number,
   now: number,
-) {
+): Promise<Id<"calendarImports">> {
   const window = calendarWindow(now);
-  await t.run(async (ctx) => {
-    await ctx.db.insert("calendarImports", {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("calendarImports", {
       sourceId,
-      generation,
-      windowStart: window.startDate,
-      windowEnd: window.endDate,
-      status: "committed",
+      sequence: 1,
+      configGeneration,
+      fromDate: window.fromDate,
+      toDate: window.toDate,
+      state: "ready",
       startedAt: now,
-      completedAt: now,
+      successAt: now,
     });
   });
 }
@@ -56,7 +60,7 @@ describe("calendarSources.save", () => {
     const first = await saveFamilySource(t, parent.token);
     const renamed = await saveFamilySource(t, parent.token, {
       name: "Familienkalender",
-      sortOrder: 2,
+      order: 2,
     });
 
     // Fixed IDs survive rename and reorder.
@@ -67,19 +71,94 @@ describe("calendarSources.save", () => {
     expect(sources).toHaveLength(1);
     expect(sources[0]?._id).toBe(first);
     expect(sources[0]?.name).toBe("Familienkalender");
-    expect(sources[0]?.sortOrder).toBe(2);
+    expect(sources[0]?.order).toBe(2);
   });
 
   it("creates new sources disabled in shadow mode", async () => {
     const t = setupCalendarTest();
     const parent = await createParentSession(t);
 
-    await saveFamilySource(t, parent.token);
+    // The input asks for enabled, but new sources always start disabled in
+    // shadow mode for comparison before activation.
+    await saveFamilySource(t, parent.token, { enabled: true });
     const sources = await t.query(api.calendarSources.list, {
       token: parent.token,
     });
     expect(sources[0]?.enabled).toBe(false);
     expect(sources[0]?.mode).toBe("shadow");
+  });
+
+  it("lists sources by order then sourceKey", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+
+    await saveFamilySource(t, parent.token, {
+      sourceKey: "b-second",
+      name: "B",
+      urlEnvKey: "B_URL",
+      order: 1,
+    });
+    await saveFamilySource(t, parent.token, {
+      sourceKey: "a-second",
+      name: "A",
+      urlEnvKey: "A_URL",
+      order: 1,
+    });
+    await saveFamilySource(t, parent.token, {
+      sourceKey: "family",
+      name: "Familie",
+      order: 0,
+    });
+
+    const sources = await t.query(api.calendarSources.list, {
+      token: parent.token,
+    });
+    expect(sources.map((s) => s.sourceKey)).toEqual([
+      "family",
+      "a-second",
+      "b-second",
+    ]);
+  });
+
+  it("rejects chained column targets", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+
+    const column = await saveFamilySource(t, parent.token);
+    const school = await saveFamilySource(t, parent.token, {
+      sourceKey: "schule",
+      name: "Schule",
+      panel: "school",
+      urlEnvKey: "SCHOOL_CALENDAR_URL",
+      intoCalendarId: column,
+    });
+    expect(school).toBeDefined();
+
+    // A column target with its own target chains: rejected.
+    await expect(
+      saveFamilySource(t, parent.token, {
+        sourceKey: "extra",
+        name: "Extra",
+        panel: "school",
+        urlEnvKey: "EXTRA_CALENDAR_URL",
+        intoCalendarId: school,
+      }),
+    ).rejects.toThrow(/chain/i);
+
+    // Self reference: rejected.
+    const extra = await saveFamilySource(t, parent.token, {
+      sourceKey: "extra",
+      name: "Extra",
+      urlEnvKey: "EXTRA_CALENDAR_URL",
+    });
+    await expect(
+      saveFamilySource(t, parent.token, {
+        sourceKey: "extra",
+        name: "Extra",
+        urlEnvKey: "EXTRA_CALENDAR_URL",
+        intoCalendarId: extra,
+      }),
+    ).rejects.toThrow(/cycle|itself/i);
   });
 });
 
@@ -92,8 +171,8 @@ describe("calendarSources.bindPerson", () => {
     const bindingId = await t.mutation(api.calendarSources.bindPerson, {
       token: parent.token,
       userId: child.userId,
-      kind: "calendar",
-      externalId: "family-calendar",
+      kind: "timetable",
+      externalId: "timetable-7b",
     });
     expect(bindingId).toBeDefined();
 
@@ -101,8 +180,8 @@ describe("calendarSources.bindPerson", () => {
       t.mutation(api.calendarSources.bindPerson, {
         token: parent.token,
         userId: child.userId,
-        kind: "calendar",
-        externalId: "family-calendar",
+        kind: "timetable",
+        externalId: "timetable-7b",
       }),
     ).rejects.toThrow(/duplicate/i);
 
@@ -110,8 +189,8 @@ describe("calendarSources.bindPerson", () => {
     const second = await t.mutation(api.calendarSources.bindPerson, {
       token: parent.token,
       userId: child.userId,
-      kind: "calendar",
-      externalId: "schule-kalender",
+      kind: "besteschule",
+      externalId: "student-42",
     });
     expect(second).not.toBe(bindingId);
   });
@@ -137,15 +216,15 @@ describe("calendarSources auth", () => {
       t.mutation(api.calendarSources.bindPerson, {
         token: child.token,
         userId: child.userId,
-        kind: "calendar",
-        externalId: "family-calendar",
+        kind: "timetable",
+        externalId: "timetable-7b",
       }),
     ).rejects.toThrow(/parent/i);
     await expect(
       t.mutation(api.calendarSources.activate, {
         token: child.token,
         sourceId,
-        mode: "active",
+        mode: "convex",
       }),
     ).rejects.toThrow(/parent/i);
   });
@@ -157,30 +236,30 @@ describe("calendarSources.activate", () => {
     const parent = await createParentSession(t);
     const sourceId = await saveFamilySource(t, parent.token);
 
-    // No import yet: activation to "active" is rejected.
+    // No import yet: activation to "convex" is rejected.
     await expect(
       t.mutation(api.calendarSources.activate, {
         token: parent.token,
         sourceId,
-        mode: "active",
+        mode: "convex",
       }),
     ).rejects.toThrow(/import/i);
 
     // A successful current-generation import covering the current 42-day
     // window unlocks activation.
     const now = Date.now();
-    await insertCommittedImport(t, sourceId, 1, now);
+    await insertReadyImport(t, sourceId, 1, now);
     const result = await t.mutation(api.calendarSources.activate, {
       token: parent.token,
       sourceId,
-      mode: "active",
+      mode: "convex",
     });
     expect(result.configurationRevision).toBeGreaterThan(1);
 
     const sources = await t.query(api.calendarSources.list, {
       token: parent.token,
     });
-    expect(sources[0]?.mode).toBe("active");
+    expect(sources[0]?.mode).toBe("convex");
     expect(sources[0]?.enabled).toBe(true);
   });
 
@@ -189,7 +268,7 @@ describe("calendarSources.activate", () => {
     const parent = await createParentSession(t);
     const sourceId = await saveFamilySource(t, parent.token);
 
-    await insertCommittedImport(t, sourceId, 1, Date.now());
+    await insertReadyImport(t, sourceId, 1, Date.now());
     // A config change (rename) bumps the generation: the previous import no
     // longer qualifies for activation.
     await saveFamilySource(t, parent.token, { name: "Umbenannt" });
@@ -197,7 +276,7 @@ describe("calendarSources.activate", () => {
       t.mutation(api.calendarSources.activate, {
         token: parent.token,
         sourceId,
-        mode: "active",
+        mode: "convex",
       }),
     ).rejects.toThrow(/import/i);
   });
@@ -211,19 +290,35 @@ describe("calendarEvents identity", () => {
     const second = await saveFamilySource(t, parent.token, {
       sourceKey: "schule",
       name: "Schule",
-      url: "https://example.test/schule.ics",
+      urlEnvKey: "SCHOOL_CALENDAR_URL",
     });
 
     // Same ICS UID in two different calendars: two distinct stored events.
+    const now = Date.now();
+    const startMs = Date.UTC(2026, 9, 10, 17, 0);
     await t.run(async (ctx) => {
       for (const sourceId of [first, second]) {
+        const importId = await ctx.db.insert("calendarImports", {
+          sourceId,
+          sequence: 1,
+          configGeneration: 1,
+          fromDate: "2026-09-30",
+          toDate: "2026-11-11",
+          state: "ready",
+          startedAt: now,
+          successAt: now,
+        });
         await ctx.db.insert("calendarEvents", {
           sourceId,
+          importId,
+          key: occurrenceKey("shared-uid@example.test", undefined),
           uid: "shared-uid@example.test",
-          occurrenceKey: occurrenceKey("shared-uid@example.test", undefined),
+          identityQuality: "provider",
           title: "Elternabend",
-          start: "2026-10-10T19:00:00+02:00",
+          startMs,
+          endMs: startMs + 60 * 60 * 1000,
           allDay: false,
+          timezone: "Europe/Berlin",
         });
       }
     });
@@ -232,7 +327,7 @@ describe("calendarEvents identity", () => {
       const events = await t.run(async (ctx) => {
         return await ctx.db
           .query("calendarEvents")
-          .withIndex("by_source", (q) => q.eq("sourceId", sourceId))
+          .withIndex("by_source_import_key", (q) => q.eq("sourceId", sourceId))
           .collect();
       });
       expect(events).toHaveLength(1);

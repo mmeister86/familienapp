@@ -5,10 +5,13 @@
 
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel.js";
 import { requireParent } from "./lib/auth";
 import { calendarWindow } from "./lib/calendarPolicy";
 import {
-  DEFAULT_CALENDAR_INTERVAL_MS,
+  MAX_CALENDAR_INTERVAL_MS,
+  MAX_CALENDAR_SOURCES,
+  MIN_CALENDAR_INTERVAL_MS,
   type CalendarSourceInput,
 } from "./lib/calendarTypes";
 import {
@@ -17,8 +20,11 @@ import {
   calendarSourcePublicValidator,
   personSourceBindingKindValidator,
 } from "./lib/calendarValidators";
+import { todayBerlin } from "./lib/dates";
+import type { MutationCtx } from "./_generated/server";
 
-const MIN_INTERVAL_MS = 60 * 1000;
+const SETTINGS_KEY = "calendars";
+const MAX_PERSON_IDS = 50;
 
 function configError(message: string): never {
   throw new ConvexError(`CalendarConfigError: ${message}`);
@@ -32,24 +38,105 @@ function checkSourceInput(source: CalendarSourceInput): void {
   if (name === "" || name.length > 120) {
     configError("name must be 1-120 characters");
   }
-  if (source.kind === "ics") {
-    if (
-      source.url === undefined ||
-      !/^(https?|webcal):\/\/.+/.test(source.url)
-    ) {
-      configError('kind "ics" requires an http(s) or webcal feed url');
-    }
+  const color = source.color.trim();
+  if (color === "" || color.length > 32) {
+    configError("color must be 1-32 characters");
+  }
+  if (!Number.isInteger(source.order)) {
+    configError("order must be an integer");
+  }
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(source.urlEnvKey)) {
+    configError(
+      "urlEnvKey must name a server-side env var (A-Z, 0-9, _, max 64)",
+    );
   }
   if (
-    source.intervalMs !== undefined &&
-    (!Number.isInteger(source.intervalMs) ||
-      source.intervalMs < MIN_INTERVAL_MS)
+    !Number.isInteger(source.intervalMs) ||
+    source.intervalMs < MIN_CALENDAR_INTERVAL_MS ||
+    source.intervalMs > MAX_CALENDAR_INTERVAL_MS
   ) {
-    configError("intervalMs must be an integer of at least 60000");
+    configError(
+      `intervalMs must be an integer between ${MIN_CALENDAR_INTERVAL_MS} and ${MAX_CALENDAR_INTERVAL_MS}`,
+    );
+  }
+  if (source.personIds.length > MAX_PERSON_IDS) {
+    configError(`personIds holds at most ${MAX_PERSON_IDS} entries`);
   }
 }
 
-// Parent-only source directory, ordered for display (sortOrder, then key).
+// Bump the global calendars configuration revision (served as
+// CalendarFeedV1.configurationRevision) and refresh the central Berlin day.
+// Every source config/mode change revokes in-flight import commit
+// permission via the per-source configGeneration; the global revision lets
+// feed readers detect any configuration change.
+async function bumpConfigurationRevision(
+  ctx: MutationCtx,
+  now: number,
+): Promise<number> {
+  const existing = await ctx.db
+    .query("familyBackendSettings")
+    .withIndex("by_key", (q) => q.eq("key", SETTINGS_KEY))
+    .unique();
+  if (existing === null) {
+    await ctx.db.insert("familyBackendSettings", {
+      key: SETTINGS_KEY,
+      configurationRevision: 1,
+      configured: false,
+      berlinDate: todayBerlin(now),
+      updatedAt: now,
+    });
+    return 1;
+  }
+  const configurationRevision = existing.configurationRevision + 1;
+  await ctx.db.patch(existing._id, {
+    configurationRevision,
+    berlinDate: todayBerlin(now),
+    updatedAt: now,
+  });
+  return configurationRevision;
+}
+
+// Validate the optional stable column target: it must exist, be a column
+// calendar without its own target (no chained targets), and never resolve
+// back to the source itself (no cycles).
+async function checkIntoCalendarId(
+  ctx: MutationCtx,
+  intoCalendarId: Id<"calendarSources"> | undefined,
+  selfId: Id<"calendarSources"> | null,
+  selfSourceKey: string,
+): Promise<void> {
+  if (intoCalendarId === undefined) {
+    return;
+  }
+  const seen = new Set<string>();
+  if (selfId !== null) {
+    seen.add(selfId);
+  }
+  let current: Id<"calendarSources"> | undefined = intoCalendarId;
+  while (current !== undefined) {
+    const id: Id<"calendarSources"> = current;
+    if (seen.has(id)) {
+      configError("intoCalendarId must not create a cycle");
+    }
+    seen.add(id);
+    const target = await ctx.db.get(id);
+    if (target === null) {
+      configError("intoCalendarId references an unknown calendar source");
+    }
+    if (target.sourceKey === selfSourceKey && selfId === null) {
+      configError("intoCalendarId must not reference the source itself");
+    }
+    if (target.intoCalendarId !== undefined) {
+      configError("intoCalendarId must not chain column targets");
+    }
+    if (target.panel !== "column") {
+      configError("intoCalendarId must reference a column calendar");
+    }
+    current = target.intoCalendarId;
+  }
+}
+
+// Parent-only source directory, ordered for display (order, then key).
 export const list = query({
   args: { token: v.string() },
   returns: v.array(calendarSourcePublicValidator),
@@ -57,16 +144,17 @@ export const list = query({
     await requireParent(ctx, args.token);
     const sources = await ctx.db.query("calendarSources").collect();
     sources.sort(
-      (a, b) => a.sortOrder - b.sortOrder || (a.sourceKey < b.sourceKey ? -1 : 1),
+      (a, b) => a.order - b.order || (a.sourceKey < b.sourceKey ? -1 : 1),
     );
     return sources;
   },
 });
 
 // Create or update a source by its stable sourceKey: renames and reorders
-// keep the same document ID. Every write bumps configurationRevision, which
-// revokes in-flight import commit permission. New sources start disabled in
-// shadow mode for comparison before activation.
+// keep the same document ID. Every write bumps configGeneration (revoking
+// in-flight import commit permission) and the global configurationRevision.
+// New sources start disabled in shadow mode for comparison before
+// activation; save() never takes over import state.
 export const save = mutation({
   args: { token: v.string(), source: calendarSourceInputValidator },
   returns: v.id("calendarSources"),
@@ -79,40 +167,62 @@ export const save = mutation({
         q.eq("sourceKey", args.source.sourceKey),
       )
       .unique();
-    const intervalMs =
-      args.source.intervalMs ??
-      existing?.intervalMs ??
-      DEFAULT_CALENDAR_INTERVAL_MS;
-    const url = args.source.kind === "ics" ? args.source.url : undefined;
+    for (const userId of args.source.personIds) {
+      if ((await ctx.db.get(userId)) === null) {
+        configError("personIds references an unknown user");
+      }
+    }
+    await checkIntoCalendarId(
+      ctx,
+      args.source.intoCalendarId,
+      existing?._id ?? null,
+      args.source.sourceKey,
+    );
+    if (existing === null) {
+      const count = (await ctx.db.query("calendarSources").collect()).length;
+      if (count >= MAX_CALENDAR_SOURCES) {
+        configError(
+          `at most ${MAX_CALENDAR_SOURCES} calendar sources are supported`,
+        );
+      }
+    }
+    const now = Date.now();
+    await bumpConfigurationRevision(ctx, now);
+    const intervalMs = args.source.intervalMs;
     if (existing !== null) {
       await ctx.db.patch(existing._id, {
         name: args.source.name.trim(),
-        kind: args.source.kind,
-        url,
-        color: args.source.color,
-        sortOrder: args.source.sortOrder ?? existing.sortOrder,
+        color: args.source.color.trim(),
+        panel: args.source.panel,
+        order: args.source.order,
+        intoCalendarId: args.source.intoCalendarId,
+        personIds: args.source.personIds,
+        urlEnvKey: args.source.urlEnvKey,
+        enabled: args.source.enabled,
         intervalMs,
-        configurationRevision: existing.configurationRevision + 1,
+        configGeneration: existing.configGeneration + 1,
       });
       return existing._id;
     }
     return await ctx.db.insert("calendarSources", {
       sourceKey: args.source.sourceKey,
       name: args.source.name.trim(),
-      kind: args.source.kind,
-      url,
-      color: args.source.color,
+      color: args.source.color.trim(),
+      panel: args.source.panel,
+      order: args.source.order,
+      intoCalendarId: args.source.intoCalendarId,
+      personIds: args.source.personIds,
+      urlEnvKey: args.source.urlEnvKey,
       enabled: false,
       mode: "shadow",
-      sortOrder: args.source.sortOrder ?? 0,
       intervalMs,
-      configurationRevision: 1,
+      configGeneration: 1,
     });
   },
 });
 
-// Bind an internal user to an external account (calendar, school, meal).
-// The (userId, kind, externalId) triple is unique: ambiguous mappings are
+// Bind an internal user to an external account (besteschule, timetable).
+// The (kind, externalId) pair is unique: ambiguous mappings are
 // configuration errors, never auto-linked by first name.
 export const bindPerson = mutation({
   args: {
@@ -134,15 +244,12 @@ export const bindPerson = mutation({
     }
     const duplicate = await ctx.db
       .query("personSourceBindings")
-      .withIndex("by_lookup", (q) =>
-        q
-          .eq("userId", args.userId)
-          .eq("kind", args.kind)
-          .eq("externalId", externalId),
+      .withIndex("by_kind_externalId", (q) =>
+        q.eq("kind", args.kind).eq("externalId", externalId),
       )
       .unique();
     if (duplicate !== null) {
-      configError("duplicate binding for this person and external account");
+      configError("duplicate binding for this external account");
     }
     return await ctx.db.insert("personSourceBindings", {
       userId: args.userId,
@@ -152,10 +259,11 @@ export const bindPerson = mutation({
   },
 });
 
-// Switch a source between shadow and active. Activating requires a
-// successful current-generation import covering the current 42-day window.
-// Every mode change bumps configurationRevision and revokes in-flight
-// commit permission.
+// Switch a source between shadow, convex and local. Activating "convex"
+// requires a successful current-generation import covering the current
+// 42-day window. Every mode change bumps configGeneration and the global
+// configurationRevision, revoking in-flight commit permission. Local mode is
+// never polled centrally, so it disables the source.
 export const activate = mutation({
   args: {
     token: v.string(),
@@ -169,18 +277,18 @@ export const activate = mutation({
     if (source === null) {
       configError("unknown calendar source");
     }
-    if (args.mode === "active") {
+    if (args.mode === "convex") {
       const window = calendarWindow(Date.now());
       const imports = await ctx.db
         .query("calendarImports")
-        .withIndex("by_source", (q) => q.eq("sourceId", args.sourceId))
+        .withIndex("by_source_sequence", (q) => q.eq("sourceId", args.sourceId))
         .collect();
       const qualifies = imports.some(
         (record) =>
-          record.status === "committed" &&
-          record.generation === source.configurationRevision &&
-          record.windowStart <= window.startDate &&
-          record.windowEnd >= window.endDate,
+          record.state === "ready" &&
+          record.configGeneration === source.configGeneration &&
+          record.fromDate <= window.fromDate &&
+          record.toDate >= window.toDate,
       );
       if (!qualifies) {
         configError(
@@ -188,11 +296,12 @@ export const activate = mutation({
         );
       }
     }
-    const configurationRevision = source.configurationRevision + 1;
+    const now = Date.now();
+    const configurationRevision = await bumpConfigurationRevision(ctx, now);
     await ctx.db.patch(source._id, {
       mode: args.mode,
-      enabled: args.mode === "active",
-      configurationRevision,
+      enabled: args.mode !== "local",
+      configGeneration: source.configGeneration + 1,
     });
     return { configurationRevision };
   },
