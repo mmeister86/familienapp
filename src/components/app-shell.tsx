@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Outlet } from "react-router"
 import { AppSidebar } from "@/components/app-sidebar"
 import { BottomNav } from "@/components/bottom-nav"
+import { OfflineBanner } from "@/components/offline-banner"
 import { useSession } from "@/hooks/useSession"
 import { useShortcuts } from "@/hooks/useShortcuts"
 import {
@@ -72,6 +73,7 @@ export function AppShell() {
               Familienapp
             </span>
           </header>
+          <OfflineBanner />
           <div className="flex-1 px-4 py-6 pb-24 md:pb-6">
             <div className="mx-auto w-full max-w-5xl">
               <Outlet />
