@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { CSSProperties } from "react"
 import { Navigate } from "react-router"
 import { cn } from "cn"
-import { ArrowLeft, Delete, LoaderCircle } from "lucide-react"
+import { ArrowLeft, Delete, House, LoaderCircle } from "lucide-react"
+import { Avatar } from "@/components/avatar"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
@@ -165,25 +167,36 @@ export function LoginPage() {
     )
   }
 
+  const padKeyClassName =
+    "pressable flex size-[4.5rem] items-center justify-center justify-self-center rounded-full bg-card text-[1.75rem] font-medium tabular-nums shadow-[0_0_0_1px_var(--border)] outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:hover:bg-muted"
+
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col items-center justify-center px-4 py-6">
+    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col items-center justify-center px-5 pt-safe pb-safe">
       {selected === null ? (
         <section
           aria-labelledby="login-heading"
-          className="flex w-full flex-col gap-6"
+          className="flex w-full flex-col gap-8 py-8"
         >
-          <div className="flex flex-col items-center gap-1 text-center">
-            <h1
-              id="login-heading"
-              ref={headingRef}
-              tabIndex={-1}
-              className="text-2xl font-semibold"
+          <div className="flex flex-col items-center gap-4 text-center">
+            <span
+              aria-hidden="true"
+              className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_24px_-12px_var(--primary)]"
             >
-              Wer meldet sich an?
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Wähle dein Profil aus.
-            </p>
+              <House className="size-7" strokeWidth={2.3} />
+            </span>
+            <div className="flex flex-col gap-1">
+              <h1
+                id="login-heading"
+                ref={headingRef}
+                tabIndex={-1}
+                className="text-[2rem] leading-tight font-bold tracking-[-0.03em] outline-none"
+              >
+                Wer bist du?
+              </h1>
+              <p className="text-[0.9375rem] text-muted-foreground">
+                Tippe auf dein Profil.
+              </p>
+            </div>
           </div>
           <ul className="grid grid-cols-2 gap-3">
             {PROFILES.map((profile) => (
@@ -195,17 +208,18 @@ export function LoginPage() {
                     setPinState("")
                     setError(null)
                   }}
-                  className="flex w-full flex-col items-center gap-3 rounded-2xl border-2 bg-card p-6 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                  style={{ borderColor: `${profile.color}66` }}
+                  className="pressable flex w-full flex-col items-center gap-3 rounded-3xl bg-card px-4 py-6 shadow-[0_0_0_1px_var(--border)] outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:hover:shadow-[0_0_0_2px_var(--profile-color)]"
+                  style={{ "--profile-color": profile.color } as CSSProperties}
                 >
-                  <span
-                    aria-hidden="true"
-                    className="flex size-16 items-center justify-center rounded-full text-4xl"
-                    style={{ backgroundColor: `${profile.color}26` }}
-                  >
-                    {profile.emoji}
+                  <Avatar emoji={profile.emoji} color={profile.color} size="xl" />
+                  <span className="flex flex-col items-center">
+                    <span className="text-lg font-bold tracking-tight">
+                      {profile.name}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {profile.role === "parent" ? "Elternteil" : "Kind"}
+                    </span>
                   </span>
-                  <span className="text-lg font-semibold">{profile.name}</span>
                 </button>
               </li>
             ))}
@@ -214,40 +228,42 @@ export function LoginPage() {
       ) : (
         <section
           aria-labelledby="pin-heading"
-          className="flex w-full flex-col items-center gap-5"
+          className="flex w-full flex-col items-center gap-6 py-6"
         >
           <div className="flex w-full items-center">
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              className="-ml-2 h-10 rounded-xl text-[0.9375rem]"
               onClick={goBack}
               disabled={submitting}
             >
               <ArrowLeft aria-hidden="true" />
-              Abbrechen
+              Profile
             </Button>
           </div>
-          <div className="flex flex-col items-center gap-2 text-center">
-            <span
-              aria-hidden="true"
-              className="flex size-16 items-center justify-center rounded-full text-4xl"
-              style={{ backgroundColor: `${selected.color}26` }}
-            >
-              {selected.emoji}
-            </span>
-            <h1
-              id="pin-heading"
-              ref={headingRef}
-              tabIndex={-1}
-              className="text-2xl font-semibold"
-            >
-              Hallo, {selected.name}!
-            </h1>
-            <p className="text-sm text-muted-foreground">Gib deine PIN ein.</p>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Avatar emoji={selected.emoji} color={selected.color} size="xl" />
+            <div className="flex flex-col gap-1">
+              <h1
+                id="pin-heading"
+                ref={headingRef}
+                tabIndex={-1}
+                className="text-[1.75rem] leading-tight font-bold tracking-[-0.03em] outline-none"
+              >
+                Hallo, {selected.name}!
+              </h1>
+              <p className="text-[0.9375rem] text-muted-foreground">
+                Gib deine PIN ein.
+              </p>
+            </div>
           </div>
           <div
-            className="flex items-center gap-3"
+            key={error ?? "ok"}
+            className={cn(
+              "flex items-center gap-4 py-1",
+              error !== null && "animate-shake",
+            )}
             role="status"
             aria-label={`PIN-Eingabe: ${pin.length} von ${selected.pinLength} Ziffern`}
           >
@@ -259,10 +275,12 @@ export function LoginPage() {
                 key={index}
                 aria-hidden="true"
                 className={cn(
-                  "size-4 rounded-full border",
+                  "size-3.5 rounded-full border-2 transition-colors duration-150",
                   index < pin.length
                     ? "border-primary bg-primary"
-                    : "border-muted-foreground/40 bg-muted",
+                    : error !== null
+                      ? "border-destructive/60"
+                      : "border-muted-foreground/40",
                 )}
               />
             ))}
@@ -289,45 +307,39 @@ export function LoginPage() {
             ) : null}
           </div>
           <div
-            className="grid w-full max-w-60 grid-cols-3 gap-2"
+            className="grid w-full max-w-[17.5rem] grid-cols-3 gap-x-6 gap-y-4"
             role="group"
             aria-label="Ziffernblock"
           >
             {PIN_PAD_DIGITS.map((digit) => (
-              <Button
+              <button
                 key={digit}
                 type="button"
-                variant="outline"
-                size="lg"
-                className="h-14 text-xl"
+                className={padKeyClassName}
                 disabled={submitting}
                 onClick={() => appendDigit(digit)}
               >
                 {digit}
-              </Button>
+              </button>
             ))}
             <span aria-hidden="true" />
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="lg"
-              className="h-14 text-xl"
+              className={padKeyClassName}
               disabled={submitting}
               onClick={() => appendDigit("0")}
             >
               0
-            </Button>
-            <Button
+            </button>
+            <button
               type="button"
-              variant="outline"
-              size="lg"
-              className="h-14"
+              className="pressable flex size-[4.5rem] items-center justify-center justify-self-center rounded-full text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:hover:bg-muted"
               disabled={submitting}
               onClick={deleteDigit}
               aria-label="Letzte Ziffer löschen"
             >
-              <Delete aria-hidden="true" />
-            </Button>
+              <Delete aria-hidden="true" className="size-7" />
+            </button>
           </div>
         </section>
       )}

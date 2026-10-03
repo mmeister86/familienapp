@@ -73,6 +73,38 @@ export function formatShortDay(dateStr: string): string {
   }).format(dateFromString(dateStr))
 }
 
+// "Samstag, 3. Oktober" — page subtitles and day headings.
+export function formatLongDay(dateStr: string): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(dateFromString(dateStr))
+}
+
+// Day heading for the Upcoming list: a primary label ("Morgen", "Montag")
+// plus the calendar date ("5. Oktober").
+export function upcomingDayParts(
+  dateStr: string,
+  todayStr: string,
+): { label: string; date: string } {
+  const date = dateFromString(dateStr)
+  const calendar = new Intl.DateTimeFormat("de-DE", {
+    day: "numeric",
+    month: "long",
+  }).format(date)
+  if (dateStr === addDaysString(todayStr, 1)) {
+    return { label: "Morgen", date: calendar }
+  }
+  if (dateStr === addDaysString(todayStr, 2)) {
+    return { label: "Übermorgen", date: calendar }
+  }
+  return {
+    label: new Intl.DateTimeFormat("de-DE", { weekday: "long" }).format(date),
+    date: calendar,
+  }
+}
+
 // Upcoming day header: "Morgen · Fr, 3. Okt." for tomorrow, else "Sa, 4. Okt.".
 export function formatUpcomingHeader(dateStr: string, todayStr: string): string {
   const label = formatShortDay(dateStr)

@@ -1,22 +1,16 @@
 import { useState } from "react"
-import type { FormEvent, KeyboardEvent } from "react"
+import type { FormEvent, KeyboardEvent, ReactNode } from "react"
 import { Link } from "react-router"
 import { useMutation, useQuery } from "convex/react"
 import { cn } from "cn"
-import { Gift } from "lucide-react"
+import { Check, Gift, X } from "lucide-react"
 import { api } from "../../convex/_generated/api"
-import {
-  AssigneeChip,
-  PointsChip,
-  nativeFieldClassName,
-} from "@/components/chips"
+import { Avatar } from "@/components/avatar"
+import { PointsChip, nativeFieldClassName } from "@/components/chips"
+import { ListGroup } from "@/components/list"
+import { PageHeader } from "@/components/page-header"
+import { ResponsiveDialog } from "@/components/responsive-dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
 import type { RedemptionItem } from "@/lib/rewards"
@@ -28,45 +22,101 @@ import {
 
 const MAX_REJECT_NOTE_LENGTH = 500
 
-const SAVE_FAILED_MESSAGE = "Speichern fehlgeschlagen. Bitte erneut versuchen."
+const SAVE_FAILED_MESSAGE = "Nicht gespeichert. Bitte erneut versuchen."
 
-function CompletedLabel({ item }: { item: TaskPendingItem }) {
-  if (item.completedAt === undefined) {
-    return null
-  }
+type ApprovalRowProps = {
+  personName: string | undefined
+  personEmoji: string | undefined
+  personColor: string | undefined
+  leading?: ReactNode
+  title: string
+  notes?: string
+  meta: ReactNode
+  points: number | undefined
+  busy: boolean
+  approveLabel: string
+  rejectLabel: string
+  onApprove: () => void
+  onReject: () => void
+}
+
+// One approval: who, what, when, plus approve/reject. Stacked with
+// full-width buttons on phones; one line with inline actions from `md`.
+function ApprovalRow({
+  personName,
+  personEmoji,
+  personColor,
+  leading,
+  title,
+  notes,
+  meta,
+  points,
+  busy,
+  approveLabel,
+  rejectLabel,
+  onApprove,
+  onReject,
+}: ApprovalRowProps) {
   return (
-    <span className="whitespace-nowrap">
-      {formatRelativeTimeDe(item.completedAt)}
-    </span>
+    <li className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:gap-4">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        {leading ?? (
+          <Avatar emoji={personEmoji} color={personColor} size="md" />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-[1rem] leading-snug font-semibold break-words">
+            {title}
+          </p>
+          {notes ? (
+            <p className="line-clamp-2 text-sm break-words text-muted-foreground">
+              {notes}
+            </p>
+          ) : null}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8125rem] text-muted-foreground">
+            <span className="font-medium text-foreground/80">
+              {personName ?? "Familie"}
+            </span>
+            {meta}
+          </p>
+        </div>
+        {points !== undefined ? (
+          <PointsChip points={points} className="mt-0.5" />
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 gap-2 md:flex md:shrink-0">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 rounded-xl md:h-9"
+          disabled={busy}
+          aria-label={rejectLabel}
+          onClick={onReject}
+        >
+          <X aria-hidden="true" />
+          Ablehnen
+        </Button>
+        <Button
+          type="button"
+          className="h-11 rounded-xl bg-success text-white hover:bg-success/90 md:h-9"
+          disabled={busy}
+          aria-label={approveLabel}
+          onClick={onApprove}
+        >
+          <Check aria-hidden="true" />
+          Bestätigen
+        </Button>
+      </div>
+    </li>
   )
 }
 
-// Reward emoji for a redemption, with a Gift icon fallback mirroring the
-// kid grid on the Rewards page. `size` scales the card and table variants.
-function RedemptionEmoji({
-  emoji,
-  size,
-}: {
-  emoji: string | undefined
-  size: "card" | "table"
-}) {
-  if (emoji === undefined) {
-    return (
-      <Gift
-        aria-hidden="true"
-        className={cn(
-          "text-muted-foreground",
-          size === "card" ? "size-9" : "size-4",
-        )}
-      />
-    )
-  }
+function RewardBadge({ emoji }: { emoji: string | undefined }) {
   return (
     <span
       aria-hidden="true"
-      className={size === "card" ? "text-4xl leading-none" : "text-base"}
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gold/15 text-xl"
     >
-      {emoji}
+      {emoji ?? <Gift className="size-5 text-gold" />}
     </span>
   )
 }
@@ -96,8 +146,7 @@ export function ApprovalsPage() {
   if (user !== undefined && !isParent) {
     return (
       <section className="flex flex-col items-start gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Freigaben</h1>
-        <p className="text-muted-foreground">Nur für Eltern.</p>
+        <PageHeader title="Freigaben" subtitle="Nur für Eltern." />
         <Button render={<Link to="/" />}>Zurück zu Heute</Button>
       </section>
     )
@@ -105,26 +154,26 @@ export function ApprovalsPage() {
 
   if (token === null || pending === undefined || requested === undefined) {
     return (
-      <section aria-label="Freigaben" className="flex flex-col gap-4">
-        <Skeleton className="h-8 w-32 bg-muted" />
-        <div className="flex flex-col gap-2" aria-hidden="true">
-          <Skeleton className="h-16 bg-muted" />
-          <Skeleton className="h-16 bg-muted" />
-        </div>
+      <section aria-label="Freigaben" className="flex flex-col gap-5">
+        <Skeleton className="h-10 w-40 bg-muted" />
+        <Skeleton className="h-36 rounded-2xl bg-muted" aria-hidden="true" />
       </section>
     )
   }
 
   const busy = busyId !== null
 
-  const handleApprove = async (item: TaskPendingItem): Promise<void> => {
+  const run = async (
+    id: string,
+    action: () => Promise<unknown>,
+  ): Promise<void> => {
     if (busy) {
       return
     }
-    setBusyId(item._id)
+    setBusyId(id)
     setActionError(null)
     try {
-      await approveTask({ token, instanceId: item._id })
+      await action()
     } catch {
       setActionError(SAVE_FAILED_MESSAGE)
     } finally {
@@ -190,46 +239,20 @@ export function ApprovalsPage() {
     }
   }
 
-  const handleApproveRedemption = async (
-    item: RedemptionItem,
-  ): Promise<void> => {
-    if (busy) {
-      return
-    }
-    setBusyId(item._id)
-    setActionError(null)
-    try {
-      await approveRedemption({ token, redemptionId: item._id })
-    } catch {
-      setActionError(SAVE_FAILED_MESSAGE)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const handleRejectRedemption = async (
-    item: RedemptionItem,
-  ): Promise<void> => {
-    if (busy) {
-      return
-    }
-    setBusyId(item._id)
-    setActionError(null)
-    try {
-      await rejectRedemption({ token, redemptionId: item._id })
-    } catch {
-      setActionError(SAVE_FAILED_MESSAGE)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const tasksEmpty = pending.length === 0
-  const rewardsEmpty = requested.length === 0
+  const total = pending.length + requested.length
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Freigaben</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Freigaben"
+        subtitle={
+          total === 0
+            ? "Nichts offen"
+            : total === 1
+              ? "1 wartet auf euch"
+              : `${String(total)} warten auf euch`
+        }
+      />
 
       {actionError !== null ? (
         <p role="alert" className="text-sm text-destructive">
@@ -237,380 +260,173 @@ export function ApprovalsPage() {
         </p>
       ) : null}
 
-      {tasksEmpty && rewardsEmpty ? (
-        <p className="text-muted-foreground">Keine offenen Freigaben. 🎉</p>
+      {total === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-3xl bg-card px-6 py-10 text-center shadow-[0_0_0_1px_var(--border)]">
+          <span aria-hidden="true" className="text-5xl">
+            ✅
+          </span>
+          <p className="text-lg font-semibold">Alles freigegeben</p>
+          <p className="text-sm text-muted-foreground">
+            Neue Anfragen der Kinder erscheinen hier.
+          </p>
+        </div>
       ) : null}
 
-      {!tasksEmpty ? (
-        <section
-          aria-labelledby="approvals-tasks-heading"
-          className="flex flex-col gap-3"
+      {pending.length > 0 ? (
+        <ListGroup
+          title="Erledigte Aufgaben"
+          titleId="approvals-tasks-heading"
+          trailing={
+            <span className="text-sm text-muted-foreground tabular-nums">
+              {pending.length}
+            </span>
+          }
         >
-          <h2
-            id="approvals-tasks-heading"
-            className="text-lg font-semibold tracking-tight"
-          >
-            Aufgaben
-          </h2>
-
-          <>
-            {/* Cards below lg. */}
-            <ul className="flex flex-col gap-2 lg:hidden">
-              {pending.map((item) => (
-                <li
-                  key={item._id}
-                  className="flex flex-col gap-2 rounded-xl border bg-card p-3"
-                >
-                  <p className="min-w-0 text-base font-medium break-words">
-                    {item.taskTitle}
-                  </p>
-                  {item.taskNotes ? (
-                    <p className="line-clamp-2 text-sm break-words text-muted-foreground">
-                      {item.taskNotes}
-                    </p>
+          {pending.map((item) => (
+            <ApprovalRow
+              key={item._id}
+              personName={item.assigneeName}
+              personEmoji={item.assigneeEmoji}
+              personColor={item.assigneeColor}
+              title={item.taskTitle}
+              notes={item.taskNotes}
+              points={item.pointsSnapshot}
+              meta={
+                <>
+                  {item.completedAt !== undefined ? (
+                    <span>
+                      erledigt {formatRelativeTimeDe(item.completedAt)}
+                    </span>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                    <AssigneeChip
-                      name={item.assigneeName}
-                      emoji={item.assigneeEmoji}
-                    />
-                    {item.pointsSnapshot === undefined ? (
-                      <span className="text-muted-foreground">–</span>
-                    ) : (
-                      <PointsChip points={item.pointsSnapshot} />
-                    )}
-                    <CompletedLabel item={item} />
-                    {item.date !== undefined ? (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                        {formatShortDay(item.date)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="min-h-11 flex-1"
-                      disabled={busy}
-                      aria-label={`Bestätigen: ${item.taskTitle}`}
-                      onClick={() => void handleApprove(item)}
-                    >
-                      Bestätigen
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="min-h-11 flex-1"
-                      disabled={busy}
-                      aria-label={`Ablehnen: ${item.taskTitle}`}
-                      onClick={() => openReject(item)}
-                    >
-                      Ablehnen
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-
-            {/* Table on lg. */}
-            <div className="hidden overflow-x-auto rounded-xl border bg-card lg:block">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Aufgabe
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Kind
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Punkte
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Erledigt
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-right font-medium">
-                      Aktionen
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pending.map((item) => (
-                    <tr
-                      key={item._id}
-                      className="border-b border-border last:border-0"
-                    >
-                      <td className="max-w-64 px-4 py-3 font-medium">
-                        <span className="block break-words">
-                          {item.taskTitle}
-                        </span>
-                        {item.taskNotes ? (
-                          <span className="line-clamp-1 block font-normal break-words text-muted-foreground">
-                            {item.taskNotes}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <AssigneeChip
-                          name={item.assigneeName}
-                          emoji={item.assigneeEmoji}
-                        />
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {item.pointsSnapshot === undefined ? (
-                          <span className="text-muted-foreground">–</span>
-                        ) : (
-                          <PointsChip points={item.pointsSnapshot} />
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                        <span className="flex flex-wrap items-center gap-1.5">
-                          <CompletedLabel item={item} />
-                          {item.date !== undefined ? (
-                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                              {formatShortDay(item.date)}
-                            </span>
-                          ) : null}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={busy}
-                            aria-label={`Bestätigen: ${item.taskTitle}`}
-                            onClick={() => void handleApprove(item)}
-                          >
-                            Bestätigen
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={busy}
-                            aria-label={`Ablehnen: ${item.taskTitle}`}
-                            onClick={() => openReject(item)}
-                          >
-                            Ablehnen
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        </section>
+                  {item.date !== undefined ? (
+                    <span>für {formatShortDay(item.date)}</span>
+                  ) : null}
+                </>
+              }
+              busy={busy}
+              approveLabel={`Bestätigen: ${item.taskTitle}`}
+              rejectLabel={`Ablehnen: ${item.taskTitle}`}
+              onApprove={() =>
+                void run(item._id, () =>
+                  approveTask({ token, instanceId: item._id }),
+                )
+              }
+              onReject={() => openReject(item)}
+            />
+          ))}
+        </ListGroup>
       ) : null}
 
-      {!rewardsEmpty ? (
-        <section
-          aria-labelledby="approvals-rewards-heading"
-          className="flex flex-col gap-3"
+      {requested.length > 0 ? (
+        <ListGroup
+          title="Wünsche"
+          titleId="approvals-rewards-heading"
+          trailing={
+            <span className="text-sm text-muted-foreground tabular-nums">
+              {requested.length}
+            </span>
+          }
         >
-          <h2
-            id="approvals-rewards-heading"
-            className="text-lg font-semibold tracking-tight"
-          >
-            Belohnungen
-          </h2>
-
-          {/* Cards below lg. */}
-          <ul className="flex flex-col gap-2 lg:hidden">
-            {requested.map((item) => (
-              <li
-                key={item._id}
-                className="flex flex-col gap-2 rounded-xl border bg-card p-3"
-              >
-                <div className="flex items-center gap-2">
-                  <RedemptionEmoji emoji={item.rewardEmoji} size="card" />
-                  <p className="min-w-0 text-base font-medium break-words">
-                    {item.rewardTitle}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                  <AssigneeChip name={item.userName} emoji={item.userEmoji} />
-                  <PointsChip points={item.costSnapshot} />
-                  <span className="whitespace-nowrap">
-                    {formatRelativeTimeDe(item.requestedAt)}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    disabled={busy}
-                    aria-label={`Bestätigen: ${item.rewardTitle}`}
-                    onClick={() => void handleApproveRedemption(item)}
-                  >
-                    Bestätigen
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    disabled={busy}
-                    aria-label={`Ablehnen: ${item.rewardTitle}`}
-                    onClick={() => void handleRejectRedemption(item)}
-                  >
-                    Ablehnen
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* Table on lg. */}
-          <div className="hidden overflow-x-auto rounded-xl border bg-card lg:block">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Belohnung
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Kind
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Kosten
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Angefragt
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">
-                    Aktionen
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {requested.map((item) => (
-                  <tr
-                    key={item._id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <td className="max-w-64 px-4 py-3 font-medium">
-                      <span className="flex items-center gap-2 break-words">
-                        <RedemptionEmoji
-                          emoji={item.rewardEmoji}
-                          size="table"
-                        />
-                        {item.rewardTitle}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <AssigneeChip
-                        name={item.userName}
-                        emoji={item.userEmoji}
-                      />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <PointsChip points={item.costSnapshot} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                      {formatRelativeTimeDe(item.requestedAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={busy}
-                          aria-label={`Bestätigen: ${item.rewardTitle}`}
-                          onClick={() => void handleApproveRedemption(item)}
-                        >
-                          Bestätigen
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={busy}
-                          aria-label={`Ablehnen: ${item.rewardTitle}`}
-                          onClick={() => void handleRejectRedemption(item)}
-                        >
-                          Ablehnen
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+          {requested.map((item: RedemptionItem) => (
+            <ApprovalRow
+              key={item._id}
+              personName={item.userName}
+              personEmoji={item.userEmoji}
+              personColor={item.userColor}
+              leading={<RewardBadge emoji={item.rewardEmoji} />}
+              title={item.rewardTitle}
+              points={item.costSnapshot}
+              meta={
+                <span>angefragt {formatRelativeTimeDe(item.requestedAt)}</span>
+              }
+              busy={busy}
+              approveLabel={`Bestätigen: ${item.rewardTitle}`}
+              rejectLabel={`Ablehnen: ${item.rewardTitle}`}
+              onApprove={() =>
+                void run(item._id, () =>
+                  approveRedemption({ token, redemptionId: item._id }),
+                )
+              }
+              onReject={() =>
+                void run(item._id, () =>
+                  rejectRedemption({ token, redemptionId: item._id }),
+                )
+              }
+            />
+          ))}
+        </ListGroup>
       ) : null}
 
-      <Dialog
+      <ResponsiveDialog
         open={rejectTarget !== null}
         onOpenChange={(open) => {
           if (!open) {
             closeReject()
           }
         }}
+        dismissible={!busy}
+        title={
+          rejectTarget === null
+            ? "Aufgabe ablehnen"
+            : `„${rejectTarget.taskTitle}“ ablehnen`
+        }
+        description="Die Aufgabe wird wieder offen. Die Notiz sieht das Kind direkt an der Aufgabe."
       >
-        <DialogContent showCloseButton={!busy} className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {rejectTarget === null
-                ? "Aufgabe ablehnen"
-                : `„${rejectTarget.taskTitle}" ablehnen`}
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleRejectSubmit} noValidate className="flex flex-col gap-4">
-            <label
-              htmlFor="approvals-reject-note"
-              className="flex flex-col gap-1.5 text-sm font-medium"
+        <form
+          onSubmit={handleRejectSubmit}
+          noValidate
+          className="flex flex-col gap-4"
+        >
+          <label
+            htmlFor="approvals-reject-note"
+            className="flex flex-col gap-1.5 text-sm font-medium"
+          >
+            Notiz (optional)
+            <textarea
+              id="approvals-reject-note"
+              value={rejectNote}
+              onChange={(event) => setRejectNote(event.target.value)}
+              onKeyDown={handleNoteKeyDown}
+              placeholder="Was soll anders gemacht werden?"
+              rows={4}
+              maxLength={MAX_REJECT_NOTE_LENGTH + 1}
+              aria-invalid={rejectNote.trim().length > MAX_REJECT_NOTE_LENGTH}
+              aria-describedby={
+                rejectError !== null ? "approvals-reject-note-error" : undefined
+              }
+              className={cn(nativeFieldClassName, "min-h-24 resize-y")}
+            />
+          </label>
+          {rejectError !== null ? (
+            <p
+              id="approvals-reject-note-error"
+              role="alert"
+              className="text-sm text-destructive"
             >
-              Notiz für das Kind (optional)
-              <textarea
-                id="approvals-reject-note"
-                value={rejectNote}
-                onChange={(event) => setRejectNote(event.target.value)}
-                onKeyDown={handleNoteKeyDown}
-                placeholder="Was soll anders gemacht werden?"
-                rows={4}
-                maxLength={MAX_REJECT_NOTE_LENGTH + 1}
-                aria-invalid={
-                  rejectNote.trim().length > MAX_REJECT_NOTE_LENGTH
-                }
-                aria-describedby={
-                  rejectError !== null
-                    ? "approvals-reject-note-error"
-                    : undefined
-                }
-                className={cn(nativeFieldClassName, "min-h-20 resize-y")}
-              />
-            </label>
-            {rejectError !== null ? (
-              <p
-                id="approvals-reject-note-error"
-                role="alert"
-                className="text-sm text-destructive"
-              >
-                {rejectError}
-              </p>
-            ) : null}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={closeReject}
-              >
-                Abbrechen
-              </Button>
-              <Button type="submit" disabled={busy}>
-                Ablehnen
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+              {rejectError}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-xl sm:h-10"
+              disabled={busy}
+              onClick={closeReject}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              className="h-11 rounded-xl sm:h-10"
+              disabled={busy}
+            >
+              Ablehnen
+            </Button>
+          </div>
+        </form>
+      </ResponsiveDialog>
     </div>
   )
 }

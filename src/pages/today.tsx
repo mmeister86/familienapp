@@ -1,18 +1,26 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router"
 import { useQuery } from "convex/react"
-import { Users } from "lucide-react"
 import { api } from "../../convex/_generated/api"
+import { Avatar } from "@/components/avatar"
 import { ChildDayCard } from "@/components/child-day-card"
-import { PointsCounter } from "@/components/points"
+import { ListGroup } from "@/components/list"
+import { PageHeader } from "@/components/page-header"
+import { PointsHero } from "@/components/points"
 import { TaskItem } from "@/components/task-item"
+import { TaskListSwitcher } from "@/components/task-list-switcher"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
-import type { TaskInstanceItem } from "@/lib/tasks"
+import {
+  formatLongDay,
+  todayBerlinString,
+  type TaskInstanceItem,
+} from "@/lib/tasks"
 
 type PersonGroup = {
   key: string
   emoji: string | null
+  color: string | null
   name: string
   items: TaskInstanceItem[]
 }
@@ -28,6 +36,7 @@ function groupByPerson(items: TaskInstanceItem[]): PersonGroup[] {
       groups.set(key, {
         key,
         emoji: item.assigneeEmoji ?? null,
+        color: item.assigneeColor ?? null,
         name: item.assigneeName ?? "Familie",
         items: [item],
       })
@@ -46,31 +55,47 @@ function groupByPerson(items: TaskInstanceItem[]): PersonGroup[] {
   })
 }
 
+function openCount(items: TaskInstanceItem[]): number {
+  return items.filter((item) => item.status === "open").length
+}
+
+function progressLabel(items: TaskInstanceItem[]): string | null {
+  if (items.length === 0) {
+    return null
+  }
+  const done = items.filter((item) => item.status !== "open").length
+  return `${String(done)} von ${String(items.length)} erledigt`
+}
+
 function LoadingState() {
   return (
-    <section aria-label="Heute" className="flex flex-col gap-4">
-      <Skeleton className="h-8 w-32 bg-muted" />
+    <section aria-label="Heute" className="flex flex-col gap-5">
+      <Skeleton className="h-10 w-36 bg-muted" />
       <div className="flex flex-col gap-2" aria-hidden="true">
-        <Skeleton className="h-16 bg-muted" />
-        <Skeleton className="h-16 bg-muted" />
-        <Skeleton className="h-16 bg-muted" />
+        <Skeleton className="h-40 rounded-2xl bg-muted" />
+        <Skeleton className="h-28 rounded-2xl bg-muted" />
       </div>
     </section>
   )
 }
 
-// Kid-only card linking to the Points page. The balance stays exposed to
-// screen readers (no overriding aria-label); the sr-only suffix announces the
-// link target.
-function PointsCardLink({ balance }: { balance: number | undefined }) {
+function GroupTitle({ group }: { group: PersonGroup }) {
   return (
-    <Link
-      to="/points"
-      className="rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-    >
-      <PointsCounter balance={balance} />
-      <span className="sr-only">Zu den Punkten</span>
-    </Link>
+    <span className="flex items-center gap-2">
+      <Avatar emoji={group.emoji} color={group.color} size="sm" />
+      {group.name}
+    </span>
+  )
+}
+
+function OpenBadge({ count }: { count: number }) {
+  if (count === 0) {
+    return <span className="text-sm text-muted-foreground">Fertig ✓</span>
+  }
+  return (
+    <span className="text-sm text-muted-foreground tabular-nums">
+      {count} offen
+    </span>
   )
 }
 
@@ -99,10 +124,6 @@ export function TodayPage() {
     return () => clearInterval(id)
   }, [])
 
-  const overdueGroups = useMemo(
-    () => (data === undefined ? [] : groupByPerson(data.overdue)),
-    [data],
-  )
   const todayGroups = useMemo(
     () => (data === undefined ? [] : groupByPerson(data.today)),
     [data],
@@ -112,30 +133,20 @@ export function TodayPage() {
     return <LoadingState />
   }
 
-  if (data.overdue.length === 0 && data.today.length === 0) {
-    return (
-      <section className="flex flex-col gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
-        {isChild ? <PointsCardLink balance={balance?.balance} /> : null}
-        {ownSnapshot !== null ? (
-          <ChildDayCard
-            name={user?.name ?? ""}
-            color={user?.color ?? ""}
-            emoji={user?.emoji ?? ""}
-            snapshot={ownSnapshot}
-            now={now}
-          />
-        ) : null}
-        <p className="text-muted-foreground">Alles erledigt! 🎉</p>
-      </section>
-    )
-  }
+  const progress = progressLabel(data.today)
+  const dateLabel = formatLongDay(todayBerlinString(new Date(now)))
+  const nothingOpen = data.overdue.length === 0 && openCount(data.today) === 0
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Heute</h1>
+      <PageHeader
+        title="Heute"
+        subtitle={progress === null ? dateLabel : `${dateLabel} – ${progress}`}
+      >
+        <TaskListSwitcher />
+      </PageHeader>
 
-      {isChild ? <PointsCardLink balance={balance?.balance} /> : null}
+      {isChild ? <PointsHero balance={balance?.balance} to="/points" /> : null}
 
       {ownSnapshot !== null ? (
         <ChildDayCard
@@ -147,83 +158,89 @@ export function TodayPage() {
         />
       ) : null}
 
-      {data.overdue.length > 0 ? (
-        <section aria-labelledby="today-overdue" className="flex flex-col gap-3">
-          <h2
-            id="today-overdue"
-            className="text-lg font-semibold text-destructive"
-          >
-            Überfällig ({data.overdue.length})
-          </h2>
-          {isParent ? (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
-              {overdueGroups.map((group) => (
-                <section key={group.key} aria-label={group.name}>
-                  <h3 className="flex items-center gap-2 pb-2 text-base font-semibold">
-                    {group.emoji === null ? (
-                      <Users aria-hidden="true" className="size-5" />
-                    ) : (
-                      <span aria-hidden="true">{group.emoji}</span>
-                    )}
-                    {group.name}
-                  </h3>
-                  <ul className="flex flex-col gap-2">
-                    {group.items.map((item) => (
-                      <TaskItem
-                        key={item._id}
-                        item={item}
-                        token={token}
-                        overdue
-                      />
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {data.overdue.map((item) => (
-                <TaskItem key={item._id} item={item} token={token} overdue />
-              ))}
-            </ul>
-          )}
-        </section>
+      {nothingOpen ? (
+        <div className="flex flex-col items-center gap-2 rounded-3xl bg-card px-6 py-10 text-center shadow-[0_0_0_1px_var(--border)]">
+          <span aria-hidden="true" className="text-5xl">
+            🎉
+          </span>
+          <p className="text-lg font-semibold">Alles erledigt für heute</p>
+          <p className="text-sm text-muted-foreground">
+            Schau in{" "}
+            <Link
+              to="/upcoming"
+              className="font-medium text-foreground underline underline-offset-2"
+            >
+              Demnächst
+            </Link>
+            , was als Nächstes ansteht.
+          </p>
+        </div>
       ) : null}
 
-      <section aria-labelledby="today-today" className="flex flex-col gap-3">
-        <h2 id="today-today" className="text-lg font-semibold">
-          Heute
-        </h2>
-        {data.today.length === 0 ? (
-          <p className="text-muted-foreground">Keine Aufgaben für heute.</p>
-        ) : isParent ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
-            {todayGroups.map((group) => (
-              <section key={group.key} aria-label={group.name}>
-                <h3 className="flex items-center gap-2 pb-2 text-base font-semibold">
-                  {group.emoji === null ? (
-                    <Users aria-hidden="true" className="size-5" />
-                  ) : (
-                    <span aria-hidden="true">{group.emoji}</span>
-                  )}
-                  {group.name}
-                </h3>
-                <ul className="flex flex-col gap-2">
-                  {group.items.map((item) => (
-                    <TaskItem key={item._id} item={item} token={token} />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {data.today.map((item) => (
-              <TaskItem key={item._id} item={item} token={token} />
-            ))}
-          </ul>
-        )}
-      </section>
+      {data.overdue.length > 0 ? (
+        <ListGroup
+          title={<span className="text-destructive">Überfällig</span>}
+          titleId="today-overdue"
+          trailing={
+            <span className="text-sm text-destructive tabular-nums">
+              {data.overdue.length}
+            </span>
+          }
+        >
+          {data.overdue.map((item) => (
+            <TaskItem
+              key={item._id}
+              item={item}
+              token={token}
+              overdue
+              showAssignee={isParent || item.assigneeId === undefined}
+            />
+          ))}
+        </ListGroup>
+      ) : null}
+
+      {data.today.length === 0 ? (
+        nothingOpen ? null : (
+          <p className="px-1 text-muted-foreground">
+            Für heute ist nichts geplant.
+          </p>
+        )
+      ) : isParent ? (
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+          {todayGroups.map((group) => (
+            <ListGroup
+              key={group.key}
+              title={<GroupTitle group={group} />}
+              titleId={`today-${group.key}`}
+              trailing={<OpenBadge count={openCount(group.items)} />}
+            >
+              {group.items.map((item) => (
+                <TaskItem
+                  key={item._id}
+                  item={item}
+                  token={token}
+                  showAssignee={false}
+                />
+              ))}
+            </ListGroup>
+          ))}
+        </div>
+      ) : (
+        <ListGroup
+          title="Meine Aufgaben"
+          titleId="today-mine"
+          trailing={<OpenBadge count={openCount(data.today)} />}
+        >
+          {data.today.map((item) => (
+            <TaskItem
+              key={item._id}
+              item={item}
+              token={token}
+              showAssignee={item.assigneeId === undefined}
+            />
+          ))}
+        </ListGroup>
+      )}
     </div>
   )
 }

@@ -2,21 +2,11 @@ import { useCallback, useState } from "react"
 import type { FormEvent } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { cn } from "cn"
+import { Avatar } from "@/components/avatar"
 import { nativeFieldClassName } from "@/components/chips"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ActiveToggle, EditorFooter } from "@/components/editor-parts"
 import { Input } from "@/components/ui/input"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+import { ResponsiveDialog } from "@/components/responsive-dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { api } from "../../convex/_generated/api"
 import type { Id } from "../../convex/_generated/dataModel"
@@ -34,6 +24,8 @@ type TaskEditorProps = {
   task: TaskAdminItem | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Edit mode only: deletes the task (and its instances). */
+  onDelete?: (task: TaskAdminItem) => Promise<void>
 }
 
 type FieldErrors = Partial<
@@ -103,7 +95,13 @@ function initialForm(task: TaskAdminItem | null): EditorForm {
 
 // Parent-only create/edit form. Dialog on md+, bottom sheet on phones.
 // Enter submits (native form), Esc closes (handled by the primitives).
-export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps) {
+export function TaskEditor({
+  token,
+  task,
+  open,
+  onOpenChange,
+  onDelete,
+}: TaskEditorProps) {
   const isMobile = useIsMobile()
   const directory = useQuery(api.users.list, open ? { token } : "skip")
   const createTask = useMutation(api.tasks.create)
@@ -117,13 +115,16 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
   // Autofocus the title whenever its input (re)mounts while the editor is
   // open. A callback ref (not an effect on `open`): the dialog/sheet portal
   // mounts a commit after `open` flips, so an effect would run too early.
+  // Not on phones: the bottom sheet focuses itself so the keyboard does not
+  // cover the sheet before the parent picks a field.
+  const autoFocus = open && !isMobile
   const focusTitle = useCallback(
     (node: HTMLInputElement | null): void => {
-      if (node !== null && open) {
+      if (node !== null && autoFocus) {
         node.focus()
       }
     },
-    [open],
+    [autoFocus],
   )
 
   // Points only exist for child assignees (backend rule) — the field is
@@ -307,7 +308,7 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
     <form
       onSubmit={handleSubmit}
       noValidate
-      className={cn("flex flex-col gap-4", isMobile && "px-5 pb-5")}
+      className="flex flex-col gap-4"
     >
       <label
         htmlFor="task-editor-title"
@@ -369,32 +370,45 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
         </p>
       ) : null}
 
-      <label
-        htmlFor="task-editor-assignee"
-        className="flex flex-col gap-1.5 text-sm font-medium"
-      >
-        Für
-        <select
-          id="task-editor-assignee"
-          value={form.assigneeId}
-          disabled={directory === undefined}
-          onChange={(event) => updateField("assigneeId", event.target.value)}
-          className={nativeFieldClassName}
-        >
-          <option value="">Familie</option>
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="pb-1.5 text-sm font-medium">Für</legend>
+        <div role="radiogroup" aria-label="Für" className="flex flex-wrap gap-2">
+          {[
+            { _id: "", name: "Familie", emoji: undefined, color: undefined },
+            ...(directory ?? []),
+          ].map((member) => {
+            const checked = form.assigneeId === member._id
+            return (
+              <button
+                key={member._id === "" ? "family" : member._id}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                onClick={() => updateField("assigneeId", member._id)}
+                className={cn(
+                  "pressable flex h-11 items-center gap-2 rounded-full border py-1 pr-4 pl-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                  checked
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-input",
+                )}
+              >
+                <Avatar
+                  emoji={member.emoji}
+                  color={member.color}
+                  size="sm"
+                  className={cn(checked && "bg-primary-foreground/90")}
+                />
+                {member.name}
+              </button>
+            )
+          })}
           {directory === undefined ? (
-            <option value="" disabled>
+            <span className="flex h-11 items-center text-sm text-muted-foreground">
               Wird geladen …
-            </option>
-          ) : (
-            directory.map((member) => (
-              <option key={member._id} value={member._id}>
-                {member.emoji} {member.name}
-              </option>
-            ))
-          )}
-        </select>
-      </label>
+            </span>
+          ) : null}
+        </div>
+      </fieldset>
 
       {showPoints ? (
         <div className="flex flex-col gap-1.5">
@@ -625,19 +639,12 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
       </div>
 
       {task !== null ? (
-        <label
-          htmlFor="task-editor-active"
-          className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-medium"
-        >
-          <input
-            id="task-editor-active"
-            type="checkbox"
-            checked={form.active}
-            onChange={(event) => updateField("active", event.target.checked)}
-            className="size-5 shrink-0 accent-primary"
-          />
-          Aktiv
-        </label>
+        <ActiveToggle
+          id="task-editor-active"
+          checked={form.active}
+          onCheckedChange={(checked) => updateField("active", checked)}
+          hint="Pausierte Aufgaben erzeugen keine neuen Termine."
+        />
       ) : null}
 
       {serverError !== null ? (
@@ -646,49 +653,29 @@ export function TaskEditor({ token, task, open, onOpenChange }: TaskEditorProps)
         </p>
       ) : null}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onOpenChange(false)}
-        >
-          Abbrechen
-        </Button>
-        <Button type="submit" disabled={saving}>
-          {saving
-            ? "Wird gespeichert …"
-            : task === null
-              ? "Erstellen"
-              : "Speichern"}
-        </Button>
-      </div>
+      <EditorFooter
+        saving={saving}
+        submitLabel={task === null ? "Aufgabe anlegen" : "Speichern"}
+        onCancel={() => onOpenChange(false)}
+        onDelete={
+          task !== null && onDelete !== undefined
+            ? () => onDelete(task)
+            : undefined
+        }
+        deleteConfirmText="Alle zugehörigen Termine werden ebenfalls gelöscht."
+      />
     </form>
   )
 
-  if (isMobile) {
-    return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[92vh] gap-0 overflow-y-auto rounded-t-xl"
-        >
-          <SheetHeader className="pb-4">
-            <SheetTitle>{heading}</SheetTitle>
-          </SheetHeader>
-          {editorForm}
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{heading}</DialogTitle>
-        </DialogHeader>
-        {editorForm}
-      </DialogContent>
-    </Dialog>
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dismissible={!saving}
+      title={heading}
+      dialogClassName="sm:max-w-lg"
+    >
+      {editorForm}
+    </ResponsiveDialog>
   )
 }

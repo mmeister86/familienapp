@@ -1,45 +1,50 @@
 import { useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
+import { ListGroup } from "@/components/list"
+import { PageHeader } from "@/components/page-header"
 import { TaskItem } from "@/components/task-item"
+import { TaskListSwitcher } from "@/components/task-list-switcher"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
 
 export function AnytimePage() {
-  const { token } = useSession()
+  const { token, user } = useSession()
   const items = useQuery(
     api.taskInstances.listAnytime,
     token ? { token } : "skip",
   )
+  const isParent = user?.role === "parent"
 
   if (token === null || items === undefined) {
     return (
-      <section aria-label="Anytime" className="flex flex-col gap-4">
-        <Skeleton className="h-8 w-32 bg-muted" />
-        <div className="flex flex-col gap-2" aria-hidden="true">
-          <Skeleton className="h-16 bg-muted" />
-          <Skeleton className="h-16 bg-muted" />
-        </div>
+      <section aria-label="Irgendwann" className="flex flex-col gap-5">
+        <Skeleton className="h-10 w-40 bg-muted" />
+        <Skeleton className="h-32 rounded-2xl bg-muted" aria-hidden="true" />
       </section>
     )
   }
 
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Anytime</h1>
-        <p className="text-muted-foreground">Ohne festes Datum</p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Irgendwann" subtitle="Aufgaben ohne festes Datum">
+        <TaskListSwitcher />
+      </PageHeader>
       {items.length === 0 ? (
-        <p className="text-muted-foreground">
+        <p className="rounded-3xl bg-card px-6 py-10 text-center text-muted-foreground shadow-[0_0_0_1px_var(--border)]">
           Keine offenen Aufgaben ohne Datum.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ListGroup>
           {items.map((item) => (
-            <TaskItem key={item._id} item={item} token={token} />
+            <TaskItem
+              key={item._id}
+              item={item}
+              token={token}
+              showAssignee={isParent || item.assigneeId === undefined}
+            />
           ))}
-        </ul>
+        </ListGroup>
       )}
-    </section>
+    </div>
   )
 }

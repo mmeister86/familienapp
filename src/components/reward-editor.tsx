@@ -1,21 +1,9 @@
 import { useCallback, useState } from "react"
 import type { FormEvent } from "react"
 import { useMutation } from "convex/react"
-import { cn } from "cn"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ActiveToggle, EditorFooter } from "@/components/editor-parts"
 import { Input } from "@/components/ui/input"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+import { ResponsiveDialog } from "@/components/responsive-dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { api } from "../../convex/_generated/api"
 import type { RewardItem } from "@/lib/rewards"
@@ -26,6 +14,8 @@ type RewardEditorProps = {
   reward: RewardItem | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Edit mode only: deletes the reward (and its requests). */
+  onDelete?: (reward: RewardItem) => Promise<void>
 }
 
 type FieldErrors = Partial<Record<"title" | "cost", string>>
@@ -59,6 +49,7 @@ export function RewardEditor({
   reward,
   open,
   onOpenChange,
+  onDelete,
 }: RewardEditorProps) {
   const isMobile = useIsMobile()
   const createReward = useMutation(api.rewards.create)
@@ -72,13 +63,15 @@ export function RewardEditor({
   // Autofocus the title whenever its input (re)mounts while the editor is
   // open. A callback ref (not an effect on `open`): the dialog/sheet portal
   // mounts a commit after `open` flips, so an effect would run too early.
+  // Not on phones (see TaskEditor).
+  const autoFocus = open && !isMobile
   const focusTitle = useCallback(
     (node: HTMLInputElement | null): void => {
-      if (node !== null && open) {
+      if (node !== null && autoFocus) {
         node.focus()
       }
     },
-    [open],
+    [autoFocus],
   )
 
   // Reset the form on the closed -> open transition. Done during render
@@ -168,7 +161,7 @@ export function RewardEditor({
     <form
       onSubmit={handleSubmit}
       noValidate
-      className={cn("flex flex-col gap-4", isMobile && "px-5 pb-5")}
+      className="flex flex-col gap-4"
     >
       <label
         htmlFor="reward-editor-title"
@@ -246,19 +239,12 @@ export function RewardEditor({
       </div>
 
       {reward !== null ? (
-        <label
-          htmlFor="reward-editor-active"
-          className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-medium"
-        >
-          <input
-            id="reward-editor-active"
-            type="checkbox"
-            checked={form.active}
-            onChange={(event) => updateField("active", event.target.checked)}
-            className="size-5 shrink-0 accent-primary"
-          />
-          Aktiv
-        </label>
+        <ActiveToggle
+          id="reward-editor-active"
+          checked={form.active}
+          onCheckedChange={(checked) => updateField("active", checked)}
+          hint="Pausierte Belohnungen sehen die Kinder nicht."
+        />
       ) : null}
 
       {serverError !== null ? (
@@ -267,49 +253,29 @@ export function RewardEditor({
         </p>
       ) : null}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onOpenChange(false)}
-        >
-          Abbrechen
-        </Button>
-        <Button type="submit" disabled={saving}>
-          {saving
-            ? "Wird gespeichert …"
-            : reward === null
-              ? "Erstellen"
-              : "Speichern"}
-        </Button>
-      </div>
+      <EditorFooter
+        saving={saving}
+        submitLabel={reward === null ? "Belohnung anlegen" : "Speichern"}
+        onCancel={() => onOpenChange(false)}
+        onDelete={
+          reward !== null && onDelete !== undefined
+            ? () => onDelete(reward)
+            : undefined
+        }
+        deleteConfirmText="Alle zugehörigen Anfragen werden ebenfalls gelöscht."
+      />
     </form>
   )
 
-  if (isMobile) {
-    return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[92vh] gap-0 overflow-y-auto rounded-t-xl"
-        >
-          <SheetHeader className="pb-4">
-            <SheetTitle>{heading}</SheetTitle>
-          </SheetHeader>
-          {editorForm}
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{heading}</DialogTitle>
-        </DialogHeader>
-        {editorForm}
-      </DialogContent>
-    </Dialog>
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dismissible={!saving}
+      title={heading}
+      dialogClassName="sm:max-w-lg"
+    >
+      {editorForm}
+    </ResponsiveDialog>
   )
 }

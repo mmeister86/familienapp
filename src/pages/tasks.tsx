@@ -2,8 +2,12 @@ import { useState } from "react"
 import { Link, useLocation } from "react-router"
 import { useMutation, useQuery } from "convex/react"
 import { cn } from "cn"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { ChevronRight, Plus, Repeat } from "lucide-react"
 import { api } from "../../convex/_generated/api"
+import { Avatar } from "@/components/avatar"
+import { PointsChip } from "@/components/chips"
+import { ListGroup } from "@/components/list"
+import { PageHeader } from "@/components/page-header"
 import { TaskEditor } from "@/components/task-editor"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -24,46 +28,96 @@ type EditorState = {
 function formatRange(task: TaskAdminItem): string {
   const start = formatShortDay(task.startDate)
   return task.endDate === undefined
-    ? start
+    ? `ab ${start}`
     : `${start} – ${formatShortDay(task.endDate)}`
 }
 
-function AssigneeLabel({ task }: { task: TaskAdminItem }) {
-  if (task.assigneeName === undefined) {
-    return <span>Familie</span>
-  }
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span aria-hidden="true">{task.assigneeEmoji}</span>
-      {task.assigneeName}
-    </span>
-  )
+function recurrenceText(task: TaskAdminItem): string {
+  const detail = formatRecurrenceDetail(task.recurrence)
+  const label = RECURRENCE_LABELS[task.recurrence.kind]
+  return detail === null ? label : `${label}, ${detail}`
 }
 
-function RecurrenceLabel({ task }: { task: TaskAdminItem }) {
-  const detail = formatRecurrenceDetail(task.recurrence)
+// One task definition. The whole row opens the editor (edit + delete live
+// there), which is the native list pattern on phones and stays a single
+// keyboard stop on laptops.
+function TaskRow({
+  task,
+  onEdit,
+}: {
+  task: TaskAdminItem
+  onEdit: () => void
+}) {
   return (
-    <span>
-      {RECURRENCE_LABELS[task.recurrence.kind]}
-      {detail === null ? null : (
-        <span className="block text-xs font-normal text-muted-foreground">
-          {detail}
+    <li>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={`Aufgabe bearbeiten: ${task.title}`}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors focus-visible:bg-muted active:bg-muted md:hover:bg-muted/60"
+      >
+        <Avatar
+          emoji={task.assigneeEmoji}
+          color={task.assigneeColor}
+          size="md"
+          className={cn(!task.active && "opacity-50")}
+        />
+        <span
+          className={cn(
+            "flex min-w-0 flex-1 flex-col gap-0.5 md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)] md:items-center md:gap-4",
+            !task.active && "opacity-60",
+          )}
+        >
+          <span className="flex min-w-0 flex-col">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-[1rem] font-semibold">
+                {task.title}
+              </span>
+              {!task.active ? (
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  Pausiert
+                </span>
+              ) : null}
+            </span>
+            <span className="truncate text-sm text-muted-foreground">
+              {task.assigneeName ?? "Familie"}
+              {task.notes ? ` – ${task.notes}` : ""}
+            </span>
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+            <Repeat aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="truncate">{recurrenceText(task)}</span>
+          </span>
+          <span className="hidden text-sm text-muted-foreground md:block">
+            {formatRange(task)}
+          </span>
         </span>
-      )}
-    </span>
+        {/* Fixed slot from md so the columns line up with and without points. */}
+        <span
+          className={cn(
+            "shrink-0 justify-end md:flex md:w-12",
+            task.points === undefined ? "hidden" : "flex",
+          )}
+        >
+          {task.points !== undefined ? (
+            <PointsChip points={task.points} />
+          ) : null}
+        </span>
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground/60"
+        />
+      </button>
+    </li>
   )
 }
 
 export function TasksPage() {
   const { token, user } = useSession()
   const isParent = user?.role === "parent"
-  const tasks = useQuery(
-    api.tasks.list,
-    token && isParent ? { token } : "skip",
-  )
+  const tasks = useQuery(api.tasks.list, token && isParent ? { token } : "skip")
   const removeTask = useMutation(api.tasks.remove)
   const [editor, setEditor] = useState<EditorState>({ open: false, task: null })
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   const location = useLocation()
 
   // `n` shortcut intent from useShortcuts: every shortcut press navigates
@@ -81,8 +135,7 @@ export function TasksPage() {
   if (user !== undefined && !isParent) {
     return (
       <section className="flex flex-col items-start gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Aufgaben</h1>
-        <p className="text-muted-foreground">Nur für Eltern.</p>
+        <PageHeader title="Aufgaben" subtitle="Nur für Eltern." />
         <Button render={<Link to="/" />}>Zurück zu Heute</Button>
       </section>
     )
@@ -90,222 +143,95 @@ export function TasksPage() {
 
   if (token === null || tasks === undefined) {
     return (
-      <section aria-label="Aufgaben" className="flex flex-col gap-4">
-        <Skeleton className="h-8 w-32 bg-muted" />
-        <div className="flex flex-col gap-2" aria-hidden="true">
-          <Skeleton className="h-16 bg-muted" />
-          <Skeleton className="h-16 bg-muted" />
-        </div>
+      <section aria-label="Aufgaben" className="flex flex-col gap-5">
+        <Skeleton className="h-10 w-40 bg-muted" />
+        <Skeleton className="h-48 rounded-2xl bg-muted" aria-hidden="true" />
       </section>
     )
   }
 
+  const active = tasks.filter((task) => task.active)
+  const paused = tasks.filter((task) => !task.active)
+
   const handleDelete = async (task: TaskAdminItem): Promise<void> => {
-    const confirmed = window.confirm(
-      "Aufgabe wirklich löschen? Alle zugehörigen Termine werden ebenfalls gelöscht.",
-    )
-    if (!confirmed) {
-      return
-    }
-    setDeleteError(null)
-    try {
-      await removeTask({ token, taskId: task._id })
-    } catch {
-      setDeleteError("Löschen fehlgeschlagen. Bitte erneut versuchen.")
-    }
+    await removeTask({ token, taskId: task._id })
+    setEditor((prev) => ({ ...prev, open: false }))
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Aufgaben</h1>
-        <Button
-          type="button"
-          onClick={() => setEditor({ open: true, task: null })}
-        >
-          <Plus aria-hidden="true" />
-          Neue Aufgabe
-          <kbd
-            aria-label="Tastenkürzel: N"
-            className="hidden rounded border border-primary-foreground/30 px-1.5 text-xs sm:inline"
-          >
-            n
-          </kbd>
-        </Button>
-      </div>
+  const newTaskButton = (
+    <Button
+      type="button"
+      onClick={() => setEditor({ open: true, task: null })}
+      aria-label="Neue Aufgabe"
+      className="size-11 rounded-full p-0 md:h-10 md:w-auto md:rounded-xl md:px-4"
+    >
+      <Plus aria-hidden="true" className="size-5 md:size-4" />
+      <span className="hidden md:inline">Neue Aufgabe</span>
+      <kbd
+        aria-hidden="true"
+        className="hidden rounded border border-primary-foreground/30 px-1.5 text-xs md:inline"
+      >
+        n
+      </kbd>
+    </Button>
+  )
 
-      {deleteError !== null ? (
-        <p role="alert" className="text-sm text-destructive">
-          {deleteError}
-        </p>
-      ) : null}
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Aufgaben"
+        subtitle={`${String(active.length)} aktiv${paused.length > 0 ? `, ${String(paused.length)} pausiert` : ""}`}
+        actions={newTaskButton}
+      />
 
       {tasks.length === 0 ? (
-        <p className="text-muted-foreground">Noch keine Aufgaben angelegt.</p>
-      ) : (
-        <>
-          {/* Cards below lg. */}
-          <ul className="flex flex-col gap-2 lg:hidden">
-            {tasks.map((task) => (
-              <li
-                key={task._id}
-                className={cn(
-                  "flex flex-col gap-2 rounded-xl border bg-card p-3",
-                  !task.active && "opacity-60",
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 flex-1 text-base font-medium break-words">
-                    {task.title}
-                  </p>
-                  {!task.active ? (
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                      Pausiert
-                    </span>
-                  ) : null}
-                </div>
-                {task.notes ? (
-                  <p className="line-clamp-2 text-sm break-words text-muted-foreground">
-                    {task.notes}
-                  </p>
-                ) : null}
-                <p className="text-sm text-muted-foreground">
-                  <AssigneeLabel task={task} />
-                  {" · "}
-                  {RECURRENCE_LABELS[task.recurrence.kind]}
-                  {formatRecurrenceDetail(task.recurrence) === null
-                    ? null
-                    : ` (${formatRecurrenceDetail(task.recurrence)})`}
-                  {" · "}
-                  {formatRange(task)}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    aria-label={`Aufgabe bearbeiten: ${task.title}`}
-                    onClick={() => setEditor({ open: true, task })}
-                  >
-                    <Pencil aria-hidden="true" />
-                    Bearbeiten
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    aria-label={`Aufgabe löschen: ${task.title}`}
-                    onClick={() => void handleDelete(task)}
-                  >
-                    <Trash2 aria-hidden="true" />
-                    Löschen
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
+        <div className="flex flex-col items-center gap-3 rounded-3xl bg-card px-6 py-10 text-center shadow-[0_0_0_1px_var(--border)]">
+          <p className="text-lg font-semibold">Noch keine Aufgaben</p>
+          <p className="text-sm text-muted-foreground">
+            Lege wiederkehrende Aufgaben wie „Müll rausbringen“ einmal an. Sie
+            erscheinen dann automatisch bei Heute.
+          </p>
+          <Button
+            type="button"
+            className="h-11 rounded-xl"
+            onClick={() => setEditor({ open: true, task: null })}
+          >
+            <Plus aria-hidden="true" />
+            Erste Aufgabe anlegen
+          </Button>
+        </div>
+      ) : null}
 
-          {/* Table-like list on lg. */}
-          <div className="hidden overflow-x-auto rounded-xl border bg-card lg:block">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Titel
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Für
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Wiederholung
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Zeitraum
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">
-                    Aktionen
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task) => (
-                  <tr
-                    key={task._id}
-                    className={cn(
-                      "border-b border-border last:border-0",
-                      !task.active && "opacity-60",
-                    )}
-                  >
-                    <td className="max-w-64 px-4 py-3 font-medium">
-                      <span className="block break-words">{task.title}</span>
-                      {task.notes ? (
-                        <span className="line-clamp-1 block font-normal break-words text-muted-foreground">
-                          {task.notes}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <AssigneeLabel task={task} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <RecurrenceLabel task={task} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {formatRange(task)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {task.active ? (
-                        "Aktiv"
-                      ) : (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                          Pausiert
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="min-h-11 min-w-11"
-                          aria-label={`Aufgabe bearbeiten: ${task.title}`}
-                          onClick={() => setEditor({ open: true, task })}
-                        >
-                          <Pencil aria-hidden="true" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="min-h-11 min-w-11"
-                          aria-label={`Aufgabe löschen: ${task.title}`}
-                          onClick={() => void handleDelete(task)}
-                        >
-                          <Trash2 aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      {active.length > 0 ? (
+        <ListGroup title="Aktiv" titleId="tasks-active">
+          {active.map((task) => (
+            <TaskRow
+              key={task._id}
+              task={task}
+              onEdit={() => setEditor({ open: true, task })}
+            />
+          ))}
+        </ListGroup>
+      ) : null}
+
+      {paused.length > 0 ? (
+        <ListGroup title="Pausiert" titleId="tasks-paused">
+          {paused.map((task) => (
+            <TaskRow
+              key={task._id}
+              task={task}
+              onEdit={() => setEditor({ open: true, task })}
+            />
+          ))}
+        </ListGroup>
+      ) : null}
 
       <TaskEditor
         token={token}
         task={editor.task}
         open={editor.open}
-        onOpenChange={(open) =>
-          setEditor((prev) => ({ ...prev, open }))
-        }
+        onOpenChange={(open) => setEditor((prev) => ({ ...prev, open }))}
+        onDelete={handleDelete}
       />
     </div>
   )
