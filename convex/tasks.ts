@@ -1,8 +1,16 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { DatabaseReader, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireParent, requireUser } from "./lib/auth";
+import {
+  newTaskNotification,
+  taskApprovedNotification,
+  taskPendingNotification,
+  taskRejectedNotification,
+  type PushNotification,
+} from "./lib/notifications";
 import {
   datesNeedingInstances,
   recurrenceValidator,
@@ -217,6 +225,28 @@ async function instanceExistsForDate(
   return existing !== null;
 }
 
+// Fire-and-forget push delivery: schedule one notification per recipient.
+// runAfter(0) only queues the action — it cannot fail delivery and the
+// mutation never waits for it (see convex/pushSend.ts).
+async function schedulePush(
+  ctx: MutationCtx,
+  userIds: Id<"users">[],
+  notification: PushNotification,
+): Promise<void> {
+  for (const userId of userIds) {
+    await ctx.scheduler.runAfter(0, internal.pushSend.sendToUser, {
+      userId,
+      notification,
+    });
+  }
+}
+
+// All parents (fixed 4-user table, full collect is the documented exception).
+async function parentIds(db: DatabaseReader): Promise<Id<"users">[]> {
+  const users = await db.query("users").collect();
+  return users.filter((u) => u.role === "parent").map((u) => u._id);
+}
+
 // Create a task (parent only) and seed its initial open instances.
 export const create = mutation({
   args: {
@@ -289,6 +319,14 @@ export const create = mutation({
           status: "open",
           pointsSnapshot: args.points,
         });
+      }
+    }
+
+    // New assigned task: tell the child (never for family/parent tasks).
+    if (args.assigneeId !== undefined) {
+      const assignee = await ctx.db.get(args.assigneeId);
+      if (assignee !== null && assignee.role === "child") {
+        await schedulePush(ctx, [assignee._id], newTaskNotification(title));
       }
     }
     return { taskId };
@@ -549,6 +587,16 @@ export const complete = mutation({
         reviewedAt: undefined,
         rejectNote: undefined,
       });
+      // Tell the parents (the assignee name is resolved above — needsApproval
+      // implies assignee !== null); a deleted task skips the push silently.
+      const task = await ctx.db.get(instance.taskId);
+      if (task !== null) {
+        await schedulePush(
+          ctx,
+          await parentIds(ctx.db),
+          taskPendingNotification(assignee.name, task.title),
+        );
+      }
       // No successor while pending — `approve` creates it instead.
       return { ok: true };
     }
@@ -610,6 +658,19 @@ export const approve = mutation({
     }
 
     await maybeCreateAfterCompletionSuccessor(ctx, instance, now);
+
+    // Tell the assignee their completion was approved (pending instances are
+    // always kid completions; a missing assignee/task skips the push).
+    if (instance.assigneeId !== undefined) {
+      const task = await ctx.db.get(instance.taskId);
+      if (task !== null) {
+        await schedulePush(
+          ctx,
+          [instance.assigneeId],
+          taskApprovedNotification(task.title, points),
+        );
+      }
+    }
     return { ok: true };
   },
 });
@@ -653,6 +714,18 @@ export const reject = mutation({
       reviewedAt: now,
       rejectNote,
     });
+
+    // Tell the assignee why their completion came back.
+    if (instance.assigneeId !== undefined) {
+      const task = await ctx.db.get(instance.taskId);
+      if (task !== null) {
+        await schedulePush(
+          ctx,
+          [instance.assigneeId],
+          taskRejectedNotification(task.title, rejectNote),
+        );
+      }
+    }
     return { ok: true };
   },
 });

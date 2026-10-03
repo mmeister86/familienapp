@@ -109,7 +109,13 @@ docker run --rm -p 8080:80 familienapp
 
 - Das Dashboard-Domain schützen (Coolify Basic Auth oder nur via VPN erreichbar).
 - Prod-Env-Variablen in Convex setzen (via `npx convex env set`):
-  `PIN_*` (PINs der Familienmitglieder), `DASHBOARD_TOKEN`, `INGEST_TOKEN`.
+  `PIN_*` (PINs der Familienmitglieder), `DASHBOARD_TOKEN`, `INGEST_TOKEN`,
+  plus für Web Push: `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` (Schlüsselpaar
+  einmalig generieren mit `pnpm dlx web-push generate-vapid-keys`; lokal und
+  in Prod dürfen verschiedene Paare verwendet werden) und optional
+  `VAPID_SUBJECT` (Kontakt-URL, Default `mailto:familienapp@matthias.lol`).
+  Hinweis: iOS liefert Web Push erst ab iOS 16.4 und nur, wenn die PWA auf
+  dem Homescreen installiert ist.
 
 ### Secrets
 

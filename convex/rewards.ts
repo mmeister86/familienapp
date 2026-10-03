@@ -1,8 +1,15 @@
 import { ConvexError, v, type Infer } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { DatabaseReader } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { DatabaseReader, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireParent, requireUser } from "./lib/auth";
+import {
+  redemptionApprovedNotification,
+  redemptionRejectedNotification,
+  rewardRequestedNotification,
+  type PushNotification,
+} from "./lib/notifications";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_EMOJI_LENGTH = 10;
@@ -109,6 +116,28 @@ async function sumRequested(
   return redemptions
     .filter((r) => r.status === "requested")
     .reduce((sum, r) => sum + r.costSnapshot, 0);
+}
+
+// Fire-and-forget push delivery: schedule one notification per recipient.
+// runAfter(0) only queues the action — the mutation never waits for delivery
+// (see convex/pushSend.ts).
+async function schedulePush(
+  ctx: MutationCtx,
+  userIds: Id<"users">[],
+  notification: PushNotification,
+): Promise<void> {
+  for (const userId of userIds) {
+    await ctx.scheduler.runAfter(0, internal.pushSend.sendToUser, {
+      userId,
+      notification,
+    });
+  }
+}
+
+// All parents (fixed 4-user table, full collect is the documented exception).
+async function parentIds(db: DatabaseReader): Promise<Id<"users">[]> {
+  const users = await db.query("users").collect();
+  return users.filter((u) => u.role === "parent").map((u) => u._id);
 }
 
 // Enrich a redemption with the reward title/emoji and the public user
@@ -264,6 +293,13 @@ export const request = mutation({
       status: "requested",
       requestedAt: Date.now(),
     });
+
+    // Tell the parents so the request reaches the Approvals screen.
+    await schedulePush(
+      ctx,
+      await parentIds(ctx.db),
+      rewardRequestedNotification(caller.name, reward.title),
+    );
     return { redemptionId };
   },
 });
@@ -301,6 +337,13 @@ export const approveRedemption = mutation({
       createdBy: caller._id,
       createdAt: now,
     });
+
+    // Tell the kid the reward is confirmed.
+    await schedulePush(
+      ctx,
+      [redemption.userId],
+      redemptionApprovedNotification(reward.title),
+    );
     return { ok: true };
   },
 });
@@ -323,6 +366,18 @@ export const rejectRedemption = mutation({
       reviewedBy: caller._id,
       reviewedAt: Date.now(),
     });
+
+    // Tell the kid the request was declined (nothing was booked). The reward
+    // can only be gone if it was deleted mid-request (cascade), which also
+    // deletes the redemption — skip the push defensively.
+    const reward = await ctx.db.get(redemption.rewardId);
+    if (reward !== null) {
+      await schedulePush(
+        ctx,
+        [redemption.userId],
+        redemptionRejectedNotification(reward.title),
+      );
+    }
     return { ok: true };
   },
 });
