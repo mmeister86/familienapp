@@ -46,6 +46,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest,woff,woff2}'],
         navigateFallback: '/index.html',
+        // Push/notificationclick handlers live in this plain script; it is
+        // importScripted into the generated sw.js and adds no fetch handler.
+        importScripts: ['/push-sw.js'],
       },
     }),
   ],
