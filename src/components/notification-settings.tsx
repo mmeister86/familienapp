@@ -1,177 +1,104 @@
-import { useCallback, useState } from "react"
-import { useMutation, useQuery } from "convex/react"
+import { useState } from "react"
+import { cn } from "cn"
 import { Bell } from "lucide-react"
-import { api } from "../../convex/_generated/api"
+import { ListGroup, ListRow } from "@/components/list"
+import { Switch } from "@/components/switch"
+import { ResponsiveDialog } from "@/components/responsive-dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { useSession } from "@/hooks/useSession"
-import {
-  getPushSubscription,
-  requestPushPermission,
-  subscribeBrowser,
-  toBase64Url,
-  unsubscribeBrowser,
-} from "@/lib/push"
+import { useNotificationSettings } from "@/hooks/useNotificationSettings"
 
-// Header bell + dialog: enable/disable web push notifications for THIS
-// device. Browser plumbing lives in src/lib/push.ts; this component glues it
-// to the push.* Convex functions and renders German status/error copy.
-export function NotificationSettings() {
-  const { token } = useSession()
-  const config = useQuery(api.push.config, token ? { token } : "skip")
-  const subscribeMutation = useMutation(api.push.subscribe)
-  const unsubscribeMutation = useMutation(api.push.unsubscribe)
+/**
+ * Push notifications for THIS device as a grouped-list row with a switch.
+ * Used inside the phone "Mehr" sheet and the desktop settings dialog.
+ */
+export function NotificationSettingsGroup({ active }: { active: boolean }) {
+  const settings = useNotificationSettings(active)
 
-  // null = still checking; the status line only renders for a known state.
-  const [open, setOpen] = useState(false)
-  const [deviceSubscribed, setDeviceSubscribed] = useState<boolean | null>(null)
-  const [unsupported, setUnsupported] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const refreshStatus = useCallback(async (): Promise<void> => {
-    try {
-      const subscription = await getPushSubscription()
-      setDeviceSubscribed(subscription !== null)
-      setUnsupported(false)
-    } catch {
-      setUnsupported(true)
-      setDeviceSubscribed(null)
-    }
-  }, [])
-
-  const handleOpenChange = (nextOpen: boolean): void => {
-    setOpen(nextOpen)
-    if (nextOpen) {
-      setError(null)
-      void refreshStatus()
-    }
+  let detail: string
+  if (settings.notConfigured) {
+    detail = "Auf dem Server nicht eingerichtet"
+  } else if (settings.unsupported) {
+    detail = "Von diesem Browser nicht unterstützt"
+  } else if (settings.deviceSubscribed === null) {
+    detail = "Status wird geprüft …"
+  } else {
+    detail = settings.deviceSubscribed
+      ? "Auf diesem Gerät aktiv"
+      : "Auf diesem Gerät aus"
   }
 
-  const enable = async (): Promise<void> => {
-    if (busy || token === null || config?.vapidPublicKey === undefined) {
-      return
-    }
-    if (config?.vapidPublicKey === null) {
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const granted = await requestPushPermission()
-      if (!granted) {
-        setError(
-          "Benachrichtigungen wurden blockiert. Bitte in den Browser-Einstellungen erlauben.",
-        )
-        return
-      }
-      const subscription = await subscribeBrowser(config.vapidPublicKey)
-      const p256dh = subscription.getKey("p256dh")
-      const auth = subscription.getKey("auth")
-      if (p256dh === null || auth === null) {
-        setError("Die Anmeldung beim Benachrichtigungsdienst ist fehlgeschlagen.")
-        return
-      }
-      await subscribeMutation({
-        token,
-        endpoint: subscription.endpoint,
-        p256dh: toBase64Url(p256dh),
-        auth: toBase64Url(auth),
-        userAgent: navigator.userAgent,
-      })
-      setDeviceSubscribed(true)
-    } catch (pushError) {
-      setError(
-        pushError instanceof Error
-          ? pushError.message
-          : "Aktivieren ist fehlgeschlagen. Bitte erneut versuchen.",
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const disable = async (): Promise<void> => {
-    if (busy || token === null) {
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const subscription = await getPushSubscription()
-      if (subscription !== null) {
-        await unsubscribeBrowser(subscription)
-        await unsubscribeMutation({ token, endpoint: subscription.endpoint })
-      }
-      setDeviceSubscribed(false)
-    } catch {
-      setError("Deaktivieren ist fehlgeschlagen. Bitte erneut versuchen.")
-    } finally {
-      setBusy(false)
-    }
-  }
+  const available =
+    !settings.notConfigured &&
+    !settings.unsupported &&
+    settings.deviceSubscribed !== null
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <ListGroup
+      footer={
+        settings.error ??
+        "Auf dem iPhone funktionieren Mitteilungen nur, wenn die App auf dem Home-Bildschirm liegt."
+      }
+    >
+      <ListRow>
+        <span
+          aria-hidden="true"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted"
+        >
+          <Bell className="size-[1.1rem]" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-[0.9375rem] font-medium">Mitteilungen</span>
+          <span className="truncate text-sm text-muted-foreground">
+            {detail}
+          </span>
+        </span>
+        {available ? (
+          <Switch
+            label="Mitteilungen auf diesem Gerät"
+            checked={settings.deviceSubscribed === true}
+            disabled={settings.busy}
+            onCheckedChange={(next) =>
+              void (next ? settings.enable() : settings.disable())
+            }
+          />
+        ) : null}
+      </ListRow>
+      {settings.error !== null ? (
+        <li className="sr-only" role="alert">
+          {settings.error}
+        </li>
+      ) : null}
+    </ListGroup>
+  )
+}
+
+/** Desktop: bell button that opens the notification settings. */
+export function NotificationSettingsButton({
+  className,
+}: {
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        aria-label="Benachrichtigungen"
-        className="size-8"
-        onClick={() => handleOpenChange(true)}
+        aria-label="Mitteilungen"
+        className={cn("size-9", className)}
+        onClick={() => setOpen(true)}
       >
-        <Bell aria-hidden="true" className="size-4" />
+        <Bell aria-hidden="true" className="size-[1.1rem]" />
       </Button>
-      <DialogContent aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>Benachrichtigungen</DialogTitle>
-          <DialogDescription>
-            Erhalte Mitteilungen auf diesem Gerät.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          {config?.vapidPublicKey === null ? (
-            <p className="text-sm text-muted-foreground">
-              Benachrichtigungen sind auf dem Server nicht konfiguriert.
-            </p>
-          ) : unsupported ? (
-            <p className="text-sm text-muted-foreground">
-              Benachrichtigungen werden von diesem Browser nicht unterstützt.
-            </p>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {deviceSubscribed === null
-                  ? "Status wird geprüft …"
-                  : deviceSubscribed
-                    ? "Auf diesem Gerät aktiviert."
-                    : "Auf diesem Gerät nicht aktiviert."}
-              </p>
-              {deviceSubscribed !== null ? (
-                <Button
-                  type="button"
-                  onClick={() => void (deviceSubscribed ? disable() : enable())}
-                  disabled={busy}
-                >
-                  {deviceSubscribed ? "Deaktivieren" : "Aktivieren"}
-                </Button>
-              ) : null}
-            </>
-          )}
-          {error !== null ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-        </div>
-      </DialogContent>
-    </Dialog>
+      <ResponsiveDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Mitteilungen"
+        description="Erhalte Hinweise zu Aufgaben und Freigaben auf diesem Gerät."
+      >
+        {open ? <NotificationSettingsGroup active={open} /> : null}
+      </ResponsiveDialog>
+    </>
   )
 }

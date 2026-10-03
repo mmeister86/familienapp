@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Familienapp">
-  <rect width="64" height="64" rx="14" fill="#171717"/>
+  <rect width="64" height="64" rx="14" fill="#1f2b50"/>
   <path d="M32 13 7 35h7v19h13V43h10v11h13V35h7L32 13Z" fill="#ffffff"/>
 </svg>

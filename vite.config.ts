@@ -22,10 +22,9 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
         scope: '/',
-        // Theme colours from src/index.css :root
-        // (--primary = oklch(0.205 0 0), --background = oklch(1 0 0)).
-        theme_color: '#171717',
-        background_color: '#ffffff',
+        // Theme colours from src/index.css :root (--background).
+        theme_color: '#f3f5f9',
+        background_color: '#f3f5f9',
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },

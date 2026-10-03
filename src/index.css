@@ -102,7 +102,7 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -134,6 +134,10 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-gold: var(--gold);
+    --color-gold-foreground: var(--gold-foreground);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -141,75 +145,89 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/*
+ * Palette: calm navy ink on a cool paper background, so the family members'
+ * own colours (avatars, group markers) carry the colour in the UI. Gold is
+ * reserved for points and rewards.
+ */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --background: #f3f5f9;
+    --foreground: #18203a;
+    --card: #ffffff;
+    --card-foreground: #18203a;
+    --popover: #ffffff;
+    --popover-foreground: #18203a;
+    --primary: #1f2b50;
+    --primary-foreground: #ffffff;
+    --secondary: #e8ecf4;
+    --secondary-foreground: #1f2b50;
+    --muted: #eceff5;
+    --muted-foreground: #5f6882;
+    --accent: #e8ecf4;
+    --accent-foreground: #1f2b50;
+    --destructive: #d7263d;
+    --border: #e1e5ee;
+    --input: #ffffff;
+    --ring: #6b7bb0;
+    --gold: #e9a800;
+    --gold-foreground: #3b2a00;
+    --success: #12855a;
+    --warning: #b45309;
+    --chart-1: #1f2b50;
+    --chart-2: #4f5d86;
+    --chart-3: #8792b2;
+    --chart-4: #b9c0d4;
+    --chart-5: #e1e5ee;
+    --radius: 0.75rem;
+    --sidebar: #eaedf4;
+    --sidebar-foreground: #18203a;
+    --sidebar-primary: #1f2b50;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #ffffff;
+    --sidebar-accent-foreground: #18203a;
+    --sidebar-border: #dde1eb;
+    --sidebar-ring: #6b7bb0;
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --background: #0e1220;
+    --foreground: #eceff7;
+    --card: #171c2c;
+    --card-foreground: #eceff7;
+    --popover: #1b2133;
+    --popover-foreground: #eceff7;
+    --primary: #dfe5f6;
+    --primary-foreground: #141a2c;
+    --secondary: #232a3e;
+    --secondary-foreground: #eceff7;
+    --muted: #222839;
+    --muted-foreground: #98a1b8;
+    --accent: #232a3e;
+    --accent-foreground: #eceff7;
+    --destructive: #ff5c6c;
+    --border: rgb(255 255 255 / 8%);
+    --input: rgb(255 255 255 / 5%);
+    --ring: #7d8cc0;
+    --gold: #f5c431;
+    --gold-foreground: #2c2000;
+    --success: #3ccf8e;
+    --warning: #f0a33a;
+    --chart-1: #dfe5f6;
+    --chart-2: #9aa6c8;
+    --chart-3: #6b789f;
+    --chart-4: #434d6b;
+    --chart-5: #2a3148;
+    --sidebar: #0a0d18;
+    --sidebar-foreground: #eceff7;
+    --sidebar-primary: #dfe5f6;
+    --sidebar-primary-foreground: #141a2c;
+    --sidebar-accent: #1b2133;
+    --sidebar-accent-foreground: #eceff7;
+    --sidebar-border: rgb(255 255 255 / 6%);
+    --sidebar-ring: #7d8cc0;
 }
 
 /* Used by the UIAble Sidebar (and the bottom nav) to hide scrollbars. */
@@ -221,14 +239,93 @@
   }
 }
 
+/* Safe-area helpers for the installed (standalone) phone app. */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Native-feeling press feedback for touch targets (no hover on phones). */
+@utility pressable {
+  transition-property: transform, background-color, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-ios);
+  -webkit-tap-highlight-color: transparent;
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      transform: none;
+    }
+  }
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@utility animate-check-pop {
+  animation: check-pop 280ms var(--ease-ios);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
-  body {
-    @apply bg-background text-foreground;
-    }
+  }
   html {
     @apply font-sans;
-    }
+    -webkit-text-size-adjust: 100%;
+    font-feature-settings: "ss01", "cv11";
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
+}
+
+@utility animate-shake {
+  animation: shake 360ms var(--ease-ios);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 }

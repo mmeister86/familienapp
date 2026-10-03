@@ -1,51 +1,64 @@
 import { useState } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { cn } from "cn"
-import { Gift, Pencil, Plus, Trash2 } from "lucide-react"
+import { ChevronRight, Gift, Plus } from "lucide-react"
 import { api } from "../../convex/_generated/api"
 import { PointsChip } from "@/components/chips"
+import { ListGroup } from "@/components/list"
+import { PageHeader } from "@/components/page-header"
+import { PointsHero } from "@/components/points"
 import { RewardEditor } from "@/components/reward-editor"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
 import {
+  REDEMPTION_STATUS_LABELS,
   formatAvailableLabel,
-  formatRedemptionStatusLabel,
+  type RedemptionItem,
   type RewardItem,
 } from "@/lib/rewards"
 import { formatRelativeTimeDe } from "@/lib/tasks"
 
-const REQUEST_FAILED_MESSAGE = "Speichern fehlgeschlagen. Bitte erneut versuchen."
-const NOT_ENOUGH_POINTS_MESSAGE = "Nicht genug Punkte für diese Belohnung."
-const DELETE_FAILED_MESSAGE = "Löschen fehlgeschlagen. Bitte erneut versuchen."
+const REQUEST_FAILED_MESSAGE = "Nicht angefragt. Bitte erneut versuchen."
+const NOT_ENOUGH_POINTS_MESSAGE = "Dafür reichen deine Punkte noch nicht."
 
 function LoadingState() {
   return (
-    <section aria-label="Belohnungen" className="flex flex-col gap-4">
-      <Skeleton className="h-8 w-40 bg-muted" />
-      <Skeleton className="h-24 bg-muted" />
-      <div
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-        aria-hidden="true"
-      >
-        <Skeleton className="h-48 bg-muted" />
-        <Skeleton className="h-48 bg-muted" />
+    <section aria-label="Belohnungen" className="flex flex-col gap-5">
+      <Skeleton className="h-10 w-44 bg-muted" />
+      <Skeleton className="h-32 rounded-3xl bg-muted" />
+      <div className="grid grid-cols-2 gap-3" aria-hidden="true">
+        <Skeleton className="h-52 rounded-3xl bg-muted" />
+        <Skeleton className="h-52 rounded-3xl bg-muted" />
       </div>
     </section>
   )
 }
 
-function RewardEmoji({ reward }: { reward: RewardItem }) {
-  if (reward.emoji === undefined) {
-    return (
-      <Gift aria-hidden="true" className="size-9 text-muted-foreground" />
-    )
-  }
+function RewardEmoji({
+  emoji,
+  className,
+}: {
+  emoji: string | undefined
+  className?: string
+}) {
   return (
-    <span aria-hidden="true" className="text-4xl leading-none">
-      {reward.emoji}
+    <span
+      aria-hidden="true"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-2xl bg-gold/15 leading-none",
+        className,
+      )}
+    >
+      {emoji ?? <Gift className="size-1/2 text-gold" />}
     </span>
   )
+}
+
+const STATUS_STYLES: Record<RedemptionItem["status"], string> = {
+  requested: "bg-warning/12 text-warning",
+  approved: "bg-success/12 text-success",
+  rejected: "bg-destructive/10 text-destructive",
 }
 
 function KidRewardsView({ token }: { token: string }) {
@@ -82,21 +95,16 @@ function KidRewardsView({ token }: { token: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Belohnungen</h1>
+      <PageHeader title="Belohnungen" />
 
-      <section
-        aria-label="Verfügbare Punkte"
-        className="rounded-xl border bg-card p-4 sm:p-6"
-      >
-        {balance === undefined ? (
-          <Skeleton className="h-9 w-56 bg-muted" />
-        ) : (
-          <p aria-live="polite" className="text-2xl font-bold tracking-tight">
-            <span aria-hidden="true">🏆 </span>
-            {formatAvailableLabel(balance.available)}
-          </p>
-        )}
-      </section>
+      <PointsHero
+        balance={balance?.balance}
+        caption={
+          balance === undefined
+            ? undefined
+            : formatAvailableLabel(balance.available)
+        }
+      />
 
       {actionError !== null ? (
         <p role="alert" className="text-sm text-destructive">
@@ -104,52 +112,81 @@ function KidRewardsView({ token }: { token: string }) {
         </p>
       ) : null}
 
-      <section aria-label="Verfügbare Belohnungen" className="flex flex-col gap-3">
+      <section aria-label="Verfügbare Belohnungen">
         {rewards === undefined ? (
-          <div
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-            aria-hidden="true"
-          >
-            <Skeleton className="h-48 bg-muted" />
-            <Skeleton className="h-48 bg-muted" />
-            <Skeleton className="h-48 bg-muted" />
+          <div className="grid grid-cols-2 gap-3" aria-hidden="true">
+            <Skeleton className="h-52 rounded-3xl bg-muted" />
+            <Skeleton className="h-52 rounded-3xl bg-muted" />
           </div>
         ) : rewards.length === 0 ? (
-          <p className="text-muted-foreground">
-            Noch keine Belohnungen verfügbar.
+          <p className="rounded-3xl bg-card px-6 py-10 text-center text-muted-foreground shadow-[0_0_0_1px_var(--border)]">
+            Noch keine Belohnungen. Frag Mama oder Papa, welche es geben soll.
           </p>
         ) : (
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {rewards.map((reward) => {
               const affordable =
                 available !== undefined && available >= reward.cost
+              const missing =
+                available === undefined ? 0 : reward.cost - available
+              const progress =
+                available === undefined
+                  ? 0
+                  : Math.min(1, Math.max(0, available / reward.cost))
               const disabled = requestingId !== null || !affordable
               return (
                 <li
                   key={reward._id}
-                  className="flex flex-col gap-3 rounded-xl border bg-card p-4"
+                  className="flex flex-col gap-3 rounded-3xl bg-card p-4 shadow-[0_0_0_1px_var(--border)]"
                 >
-                  <RewardEmoji reward={reward} />
-                  <p className="text-base font-medium break-words">
-                    {reward.title}
-                  </p>
-                  <div className="flex">
-                    <PointsChip points={reward.cost} />
+                  <RewardEmoji
+                    emoji={reward.emoji}
+                    className="size-14 text-3xl"
+                  />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <p className="text-[0.9375rem] leading-snug font-semibold break-words">
+                      {reward.title}
+                    </p>
+                    <PointsChip points={reward.cost} className="self-start" />
                   </div>
+                  {affordable ? null : (
+                    <div className="flex flex-col gap-1">
+                      <div
+                        role="progressbar"
+                        aria-label={`Fortschritt zu ${reward.title}`}
+                        aria-valuemin={0}
+                        aria-valuemax={reward.cost}
+                        aria-valuenow={Math.min(available ?? 0, reward.cost)}
+                        className="h-1.5 overflow-hidden rounded-full bg-muted"
+                      >
+                        <div
+                          className="h-full rounded-full bg-gold"
+                          style={{ width: `${String(progress * 100)}%` }}
+                        />
+                      </div>
+                      {available !== undefined ? (
+                        <p className="text-xs text-muted-foreground">
+                          Noch {missing} {missing === 1 ? "Punkt" : "Punkte"}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
                   <Button
                     type="button"
-                    className="min-h-11 w-full"
+                    className={cn(
+                      "h-10 w-full rounded-xl",
+                      affordable &&
+                        "bg-gold text-gold-foreground hover:bg-gold/90",
+                    )}
+                    variant={affordable ? "default" : "secondary"}
                     disabled={disabled}
                     aria-label={`${reward.title} einlösen, ${String(reward.cost)} Punkte`}
                     onClick={() => void handleRequest(reward)}
                   >
-                    {requestingId === reward._id ? "Wird angefragt …" : "Einlösen"}
+                    {requestingId === reward._id
+                      ? "Wird angefragt …"
+                      : "Einlösen"}
                   </Button>
-                  {!affordable && available !== undefined ? (
-                    <p className="text-sm text-muted-foreground">
-                      Nicht genug Punkte
-                    </p>
-                  ) : null}
                 </li>
               )
             })}
@@ -157,50 +194,36 @@ function KidRewardsView({ token }: { token: string }) {
         )}
       </section>
 
-      <section
-        aria-labelledby="rewards-mine-heading"
-        className="flex flex-col gap-3"
-      >
-        <h2
-          id="rewards-mine-heading"
-          className="text-lg font-semibold tracking-tight"
-        >
-          Meine Anfragen
-        </h2>
-        {mine === undefined ? (
-          <div className="flex flex-col gap-2" aria-hidden="true">
-            <Skeleton className="h-14 bg-muted" />
-            <Skeleton className="h-14 bg-muted" />
-          </div>
-        ) : mine.length === 0 ? (
-          <p className="text-muted-foreground">
-            Noch keine Belohnungen angefragt.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {mine.map((item) => (
-              <li
-                key={item._id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border bg-card p-3"
-              >
-                <span className="flex items-center gap-2 text-base font-medium">
-                  {item.rewardEmoji !== undefined ? (
-                    <span aria-hidden="true">{item.rewardEmoji}</span>
-                  ) : null}
+      {mine === undefined ? (
+        <Skeleton className="h-28 rounded-2xl bg-muted" aria-hidden="true" />
+      ) : mine.length === 0 ? null : (
+        <ListGroup title="Meine Anfragen" titleId="rewards-mine-heading">
+          {mine.map((item) => (
+            <li key={item._id} className="flex items-center gap-3 px-4 py-3">
+              <RewardEmoji
+                emoji={item.rewardEmoji}
+                className="size-10 text-xl"
+              />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[0.9375rem] font-medium">
                   {item.rewardTitle}
-                </span>
-                <PointsChip points={item.costSnapshot} />
-                <span className="text-sm">
-                  {formatRedemptionStatusLabel(item.status)}
                 </span>
                 <span className="text-sm text-muted-foreground">
                   {formatRelativeTimeDe(item.requestedAt)}
                 </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              </span>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
+                  STATUS_STYLES[item.status],
+                )}
+              >
+                {REDEMPTION_STATUS_LABELS[item.status]}
+              </span>
+            </li>
+          ))}
+        </ListGroup>
+      )}
     </div>
   )
 }
@@ -210,190 +233,114 @@ type EditorState = {
   reward: RewardItem | null
 }
 
+function RewardRow({
+  reward,
+  onEdit,
+}: {
+  reward: RewardItem
+  onEdit: () => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={`Belohnung bearbeiten: ${reward.title}`}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors focus-visible:bg-muted active:bg-muted md:hover:bg-muted/60"
+      >
+        <RewardEmoji
+          emoji={reward.emoji}
+          className={cn("size-10 text-xl", !reward.active && "opacity-50")}
+        />
+        <span
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2",
+            !reward.active && "opacity-60",
+          )}
+        >
+          <span className="truncate text-[1rem] font-semibold">
+            {reward.title}
+          </span>
+          {!reward.active ? (
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              Pausiert
+            </span>
+          ) : null}
+        </span>
+        <PointsChip points={reward.cost} />
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground/60"
+        />
+      </button>
+    </li>
+  )
+}
+
 function ParentRewardsView({ token }: { token: string }) {
   const rewards = useQuery(api.rewards.list, { token })
   const removeReward = useMutation(api.rewards.remove)
-  const [editor, setEditor] = useState<EditorState>({ open: false, reward: null })
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [editor, setEditor] = useState<EditorState>({
+    open: false,
+    reward: null,
+  })
 
   const handleDelete = async (reward: RewardItem): Promise<void> => {
-    const confirmed = window.confirm(
-      "Belohnung wirklich löschen? Alle zugehörigen Anfragen werden ebenfalls gelöscht.",
-    )
-    if (!confirmed) {
-      return
-    }
-    setDeleteError(null)
-    try {
-      await removeReward({ token, rewardId: reward._id })
-    } catch {
-      setDeleteError(DELETE_FAILED_MESSAGE)
-    }
+    await removeReward({ token, rewardId: reward._id })
+    setEditor((prev) => ({ ...prev, open: false }))
   }
 
   if (rewards === undefined) {
     return <LoadingState />
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Belohnungen</h1>
-        <Button
-          type="button"
-          onClick={() => setEditor({ open: true, reward: null })}
-        >
-          <Plus aria-hidden="true" />
-          Neue Belohnung
-        </Button>
-      </div>
+  const sorted = [...rewards].sort(
+    (a, b) => Number(b.active) - Number(a.active) || a.cost - b.cost,
+  )
 
-      {deleteError !== null ? (
-        <p role="alert" className="text-sm text-destructive">
-          {deleteError}
-        </p>
-      ) : null}
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Belohnungen"
+        subtitle="Was die Kinder sich mit Punkten wünschen können"
+        actions={
+          <Button
+            type="button"
+            onClick={() => setEditor({ open: true, reward: null })}
+            aria-label="Neue Belohnung"
+            className="size-11 rounded-full p-0 md:h-10 md:w-auto md:rounded-xl md:px-4"
+          >
+            <Plus aria-hidden="true" className="size-5 md:size-4" />
+            <span className="hidden md:inline">Neue Belohnung</span>
+          </Button>
+        }
+      />
 
       {rewards.length === 0 ? (
-        <p className="text-muted-foreground">
-          Noch keine Belohnungen angelegt.
-        </p>
+        <div className="flex flex-col items-center gap-3 rounded-3xl bg-card px-6 py-10 text-center shadow-[0_0_0_1px_var(--border)]">
+          <p className="text-lg font-semibold">Noch keine Belohnungen</p>
+          <p className="text-sm text-muted-foreground">
+            Zum Beispiel „Eis essen gehen“ für 40 Punkte.
+          </p>
+          <Button
+            type="button"
+            className="h-11 rounded-xl"
+            onClick={() => setEditor({ open: true, reward: null })}
+          >
+            <Plus aria-hidden="true" />
+            Erste Belohnung anlegen
+          </Button>
+        </div>
       ) : (
-        <>
-          {/* Cards below lg. */}
-          <ul className="flex flex-col gap-2 lg:hidden">
-            {rewards.map((reward) => (
-              <li
-                key={reward._id}
-                className={cn(
-                  "flex flex-col gap-2 rounded-xl border bg-card p-3",
-                  !reward.active && "opacity-60",
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="flex min-w-0 flex-1 items-center gap-2 text-base font-medium break-words">
-                    {reward.emoji !== undefined ? (
-                      <span aria-hidden="true">{reward.emoji}</span>
-                    ) : null}
-                    {reward.title}
-                  </p>
-                  {reward.active ? (
-                    <span className="shrink-0 text-xs font-medium">Aktiv</span>
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                      Pausiert
-                    </span>
-                  )}
-                </div>
-                <div className="flex">
-                  <PointsChip points={reward.cost} />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    aria-label={`Belohnung bearbeiten: ${reward.title}`}
-                    onClick={() => setEditor({ open: true, reward })}
-                  >
-                    <Pencil aria-hidden="true" />
-                    Bearbeiten
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="min-h-11 flex-1"
-                    aria-label={`Belohnung löschen: ${reward.title}`}
-                    onClick={() => void handleDelete(reward)}
-                  >
-                    <Trash2 aria-hidden="true" />
-                    Löschen
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* Table on lg. */}
-          <div className="hidden overflow-x-auto rounded-xl border bg-card lg:block">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Belohnung
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Kosten
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">
-                    Aktionen
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rewards.map((reward) => (
-                  <tr
-                    key={reward._id}
-                    className={cn(
-                      "border-b border-border last:border-0",
-                      !reward.active && "opacity-60",
-                    )}
-                  >
-                    <td className="max-w-64 px-4 py-3 font-medium">
-                      <span className="flex items-center gap-2 break-words">
-                        {reward.emoji !== undefined ? (
-                          <span aria-hidden="true">{reward.emoji}</span>
-                        ) : null}
-                        {reward.title}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <PointsChip points={reward.cost} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {reward.active ? (
-                        "Aktiv"
-                      ) : (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                          Pausiert
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="min-h-11 min-w-11"
-                          aria-label={`Belohnung bearbeiten: ${reward.title}`}
-                          onClick={() => setEditor({ open: true, reward })}
-                        >
-                          <Pencil aria-hidden="true" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="min-h-11 min-w-11"
-                          aria-label={`Belohnung löschen: ${reward.title}`}
-                          onClick={() => void handleDelete(reward)}
-                        >
-                          <Trash2 aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <ListGroup>
+          {sorted.map((reward) => (
+            <RewardRow
+              key={reward._id}
+              reward={reward}
+              onEdit={() => setEditor({ open: true, reward })}
+            />
+          ))}
+        </ListGroup>
       )}
 
       <RewardEditor
@@ -401,6 +348,7 @@ function ParentRewardsView({ token }: { token: string }) {
         reward={editor.reward}
         open={editor.open}
         onOpenChange={(open) => setEditor((prev) => ({ ...prev, open }))}
+        onDelete={handleDelete}
       />
     </div>
   )

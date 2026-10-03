@@ -1,60 +1,88 @@
 import { useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
+import { ListGroup } from "@/components/list"
+import { PageHeader } from "@/components/page-header"
 import { TaskItem } from "@/components/task-item"
+import { TaskListSwitcher } from "@/components/task-list-switcher"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
-import { formatUpcomingHeader, todayBerlinString } from "@/lib/tasks"
+import { todayBerlinString, upcomingDayParts } from "@/lib/tasks"
 
 export function UpcomingPage() {
-  const { token } = useSession()
+  const { token, user } = useSession()
   const days = useQuery(
     api.taskInstances.listUpcoming,
     token ? { token } : "skip",
   )
   const today = todayBerlinString()
+  const isParent = user?.role === "parent"
 
   if (token === null || days === undefined) {
     return (
-      <section aria-label="Nächste 7 Tage" className="flex flex-col gap-4">
-        <Skeleton className="h-8 w-48 bg-muted" />
+      <section aria-label="Demnächst" className="flex flex-col gap-5">
+        <Skeleton className="h-10 w-48 bg-muted" />
         <div className="flex flex-col gap-2" aria-hidden="true">
-          <Skeleton className="h-16 bg-muted" />
-          <Skeleton className="h-16 bg-muted" />
+          <Skeleton className="h-24 rounded-2xl bg-muted" />
+          <Skeleton className="h-24 rounded-2xl bg-muted" />
         </div>
       </section>
     )
   }
 
-  const entirelyEmpty = days.every((day) => day.items.length === 0)
+  const plannedDays = days.filter((day) => day.items.length > 0)
+  const emptyDays = days.length - plannedDays.length
 
   return (
-    <div className="flex flex-col gap-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Nächste 7 Tage</h1>
-      {entirelyEmpty ? (
-        <p className="text-muted-foreground">Nichts geplant.</p>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Demnächst" subtitle="Die nächsten 7 Tage">
+        <TaskListSwitcher />
+      </PageHeader>
+
+      {plannedDays.length === 0 ? (
+        <p className="rounded-3xl bg-card px-6 py-10 text-center text-muted-foreground shadow-[0_0_0_1px_var(--border)]">
+          In den nächsten 7 Tagen ist nichts geplant.
+        </p>
       ) : (
-        days.map((day) => (
-          <section
-            key={day.date}
-            aria-labelledby={`upcoming-${day.date}`}
-            className="flex flex-col gap-2"
-          >
-            <h2 id={`upcoming-${day.date}`} className="text-lg font-semibold">
-              {formatUpcomingHeader(day.date, today)}
-            </h2>
-            {day.items.length === 0 ? (
-              <p aria-hidden="true" className="text-muted-foreground">
-                —
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
+        <div className="flex flex-col gap-6">
+          {plannedDays.map((day) => {
+            const parts = upcomingDayParts(day.date, today)
+            return (
+              <ListGroup
+                key={day.date}
+                titleId={`upcoming-${day.date}`}
+                title={
+                  <span className="flex items-baseline gap-2">
+                    {parts.label}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {parts.date}
+                    </span>
+                  </span>
+                }
+                trailing={
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {day.items.length}
+                  </span>
+                }
+              >
                 {day.items.map((item) => (
-                  <TaskItem key={item._id} item={item} token={token} />
+                  <TaskItem
+                    key={item._id}
+                    item={item}
+                    token={token}
+                    showAssignee={isParent || item.assigneeId === undefined}
+                  />
                 ))}
-              </ul>
-            )}
-          </section>
-        ))
+              </ListGroup>
+            )
+          })}
+          {emptyDays > 0 ? (
+            <p className="px-1 text-sm text-muted-foreground">
+              {emptyDays === 1
+                ? "An einem Tag ist nichts geplant."
+                : `An ${String(emptyDays)} Tagen ist nichts geplant.`}
+            </p>
+          ) : null}
+        </div>
       )}
     </div>
   )

@@ -3,7 +3,7 @@
 //   node scripts/generate-icons.mjs
 //
 // Outputs (all written to public/):
-//   public/icons/icon-192.png           rounded square, primary #171717
+//   public/icons/icon-192.png           rounded square, primary #1f2b50
 //   public/icons/icon-512.png
 //   public/icons/maskable-192.png       full-bleed, glyph inside the safe zone
 //   public/icons/maskable-512.png
@@ -11,7 +11,7 @@
 //   public/favicon.svg                  same glyph as vector
 //
 // Glyph: a white house (roof triangle + body + door) on the theme's primary
-// colour (--primary = oklch(0.205 0 0) = #171717 from src/index.css).
+// colour (--primary = #1f2b50 from src/index.css).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ import { deflateSync } from "node:zlib";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "public");
 
-const PRIMARY = [23, 23, 23]; // #171717, theme --primary (light)
+const PRIMARY = [31, 43, 80]; // #1f2b50, theme --primary (light)
 const GLYPH = [255, 255, 255];
 const SS = 4; // supersampling factor for anti-aliasing
 
@@ -174,7 +174,7 @@ writeFileSync(
 );
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Familienapp">
-  <rect width="64" height="64" rx="14" fill="#171717"/>
+  <rect width="64" height="64" rx="14" fill="#1f2b50"/>
   <path d="M32 13 7 35h7v19h13V43h10v11h13V35h7L32 13Z" fill="#ffffff"/>
 </svg>
 `;

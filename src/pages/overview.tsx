@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
+import { Avatar } from "@/components/avatar"
 import { BriefingCard } from "@/components/briefing-card"
 import { ChildDayCard } from "@/components/child-day-card"
+import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSession } from "@/hooks/useSession"
+import { formatLongDay, todayBerlinString } from "@/lib/tasks"
 
 function LoadingState() {
   return (
-    <section aria-label="Übersicht" className="flex flex-col gap-4">
-      <Skeleton className="h-8 w-40 bg-muted" />
-      <Skeleton className="h-32 bg-muted" />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Skeleton className="h-64 bg-muted" />
-        <Skeleton className="h-64 bg-muted" />
+    <section aria-label="Übersicht" className="flex flex-col gap-5">
+      <Skeleton className="h-10 w-44 bg-muted" />
+      <Skeleton className="h-40 rounded-3xl bg-muted" />
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <Skeleton className="h-80 rounded-3xl bg-muted" />
+        <Skeleton className="h-80 rounded-3xl bg-muted" />
       </div>
     </section>
   )
@@ -42,22 +45,27 @@ export function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Übersicht</h1>
+      <PageHeader
+        title="Übersicht"
+        subtitle={formatLongDay(todayBerlinString(new Date(now)))}
+      />
 
       {briefing ? <BriefingCard briefing={briefing} /> : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2">
         {children.map((child) =>
           child.snapshot === null ? (
             <section
               key={child.slug}
-              className="rounded-xl border bg-card p-4 text-sm text-muted-foreground"
+              className="flex items-center gap-3 rounded-3xl bg-card p-5 shadow-[0_0_0_1px_var(--border)]"
             >
-              <h2 className="mb-2 flex items-center gap-2 text-base font-semibold">
-                <span aria-hidden="true">{child.emoji}</span>
-                <span style={{ color: child.color }}>{child.name}</span>
-              </h2>
-              Noch keine Daten vom Dashboard.
+              <Avatar emoji={child.emoji} color={child.color} size="md" />
+              <div>
+                <h2 className="font-semibold">{child.name}</h2>
+                <p className="text-sm text-muted-foreground">
+                  Noch keine Daten vom Wand-Dashboard.
+                </p>
+              </div>
             </section>
           ) : (
             <ChildDayCard
