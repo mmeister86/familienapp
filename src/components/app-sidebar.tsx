@@ -1,7 +1,7 @@
-import { useQuery } from "convex/react"
 import { House, LogOut } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router"
-import { api } from "../../convex/_generated/api"
+import { Avatar } from "@/components/avatar"
+import { NotificationSettingsButton } from "@/components/notification-settings"
 import { Button } from "@/components/ui/button"
 import {
   Sidebar,
@@ -14,37 +14,35 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { useApprovalsCount } from "@/hooks/useApprovalsCount"
 import { useSession } from "@/hooks/useSession"
-import { isNavItemActive, isNavItemVisible, navItems } from "@/lib/nav"
+import {
+  NAV_GROUP_LABELS,
+  NAV_GROUP_ORDER,
+  isNavItemActive,
+  isNavItemVisible,
+  navItems,
+} from "@/lib/nav"
 
 /**
- * Persistent sidebar for tablet (`md`) and laptop (`lg`) layouts; on phones
- * the same content renders inside the sidebar sheet (opened via the header
- * trigger), so the footer logout stays reachable at 390 px.
+ * Inset sidebar for tablet (`md`, icon-collapsed) and laptop (`lg`,
+ * expanded). Phones use the tab bar + "Mehr" sheet instead.
  */
 export function AppSidebar() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { user, token, logout } = useSession()
+  const { user, logout } = useSession()
+  const approvalsCount = useApprovalsCount()
   // Unknown/loading role renders no destinations (see isNavItemVisible) so
   // parent items never flash to kids while the session resolves.
-  const visibleItems = navItems.filter((item) =>
-    isNavItemVisible(item, user?.role),
-  )
-  // Parent-only queries: guarded by the role check so kids never trigger
-  // them. The Approvals badge sums pending tasks and reward requests.
-  const pendingCount =
-    useQuery(
-      api.taskInstances.listPending,
-      token && user?.role === "parent" ? { token } : "skip",
-    )?.length ?? 0
-  const requestedCount =
-    useQuery(
-      api.rewards.listRequested,
-      token && user?.role === "parent" ? { token } : "skip",
-    )?.length ?? 0
-  const approvalsCount = pendingCount + requestedCount
+  const groups = NAV_GROUP_ORDER.map((group) => ({
+    group,
+    items: navItems.filter(
+      (item) => item.group === group && isNavItemVisible(item, user?.role),
+    ),
+  })).filter((entry) => entry.items.length > 0)
 
   const handleLogout = async (): Promise<void> => {
     await logout()
@@ -52,90 +50,99 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex h-10 items-center gap-2 px-2 text-base font-semibold group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <House className="size-5 shrink-0" />
-          <span className="truncate group-data-[collapsible=icon]:hidden">
+    <Sidebar variant="inset" collapsible="icon">
+      <SidebarHeader className="pt-3">
+        <div className="flex h-10 items-center gap-2.5 px-1.5 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0">
+          <span
+            aria-hidden="true"
+            className="flex size-8 shrink-0 items-center justify-center rounded-[0.6rem] bg-primary text-primary-foreground group-data-[collapsible=icon]:hidden"
+          >
+            <House className="size-[1.05rem]" strokeWidth={2.4} />
+          </span>
+          <span className="flex-1 truncate text-[0.9375rem] font-bold tracking-tight group-data-[collapsible=icon]:hidden">
             Familienapp
           </span>
+          <SidebarTrigger
+            reverseIcon
+            className="size-8 text-muted-foreground hover:text-foreground [&_svg]:size-[1.15rem]!"
+          />
         </div>
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {visibleItems.map((item) => {
-                const active = isNavItemActive(item, pathname)
-                const showBadge =
-                  item.url === "/approvals" && approvalsCount > 0
+      <SidebarContent className="pt-2">
+        {groups.map(({ group, items }) => (
+          <SidebarGroup key={group} className="py-1.5">
+            <SidebarGroupLabel className="text-[0.75rem] font-medium text-muted-foreground">
+              {NAV_GROUP_LABELS[group]}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-0.5">
+                {items.map((item) => {
+                  const active = isNavItemActive(item, pathname)
+                  const showBadge =
+                    item.url === "/approvals" && approvalsCount > 0
 
-                return (
-                  <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton
-                      isActive={active}
-                      aria-current={active ? "page" : undefined}
-                      aria-label={
-                        showBadge
-                          ? `Freigaben, ${String(approvalsCount)} offen`
-                          : undefined
-                      }
-                      tooltip={item.title}
-                      render={<Link to={item.url} />}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
+                  return (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton
+                        isActive={active}
+                        aria-current={active ? "page" : undefined}
+                        aria-label={
+                          showBadge
+                            ? `Freigaben, ${String(approvalsCount)} offen`
+                            : undefined
+                        }
+                        tooltip={item.title}
+                        render={<Link to={item.url} />}
+                        className="h-9 text-[0.875rem] text-sidebar-foreground/80 data-active:font-semibold data-active:text-sidebar-foreground data-active:shadow-[0_1px_2px_rgb(24_32_58/0.08),0_0_0_1px_var(--sidebar-border)] [&_svg]:size-[1.05rem]"
+                      >
+                        <item.icon strokeWidth={active ? 2.3 : 1.9} />
+                        <span>{item.title}</span>
+                        {showBadge ? (
+                          <span
+                            aria-hidden="true"
+                            className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[0.7rem] font-semibold text-white tabular-nums group-data-[collapsible=icon]:hidden"
+                          >
+                            {approvalsCount}
+                          </span>
+                        ) : null}
+                      </SidebarMenuButton>
                       {showBadge ? (
                         <span
                           aria-hidden="true"
-                          className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-semibold text-primary-foreground tabular-nums group-data-[collapsible=icon]:hidden"
-                        >
-                          {approvalsCount}
-                        </span>
+                          className="pointer-events-none absolute top-1 right-1 hidden size-2 rounded-full bg-destructive ring-2 ring-sidebar group-data-[collapsible=icon]:block"
+                        />
                       ) : null}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="pb-3">
         {user ? (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 px-2 py-1.5">
-              <span
-                aria-hidden="true"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full border text-lg"
-                style={{ borderColor: user.color }}
-              >
-                {user.emoji}
+          <div className="flex items-center gap-2 rounded-xl p-1.5 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:p-0">
+            <Avatar emoji={user.emoji} color={user.color} size="md" />
+            <span className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
+              <span className="truncate text-sm font-semibold">
+                {user.name}
               </span>
-              <span className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-                <span className="truncate text-sm font-medium">
-                  {user.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {user.role === "parent" ? "Elternteil" : "Kind"}
-                </span>
+              <span className="text-xs text-muted-foreground">
+                {user.role === "parent" ? "Elternteil" : "Kind"}
               </span>
-            </div>
+            </span>
+            <NotificationSettingsButton className="text-muted-foreground hover:text-foreground" />
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => void handleLogout()}
-              // In icon-collapsed mode the text is hidden and the icon is
-              // aria-hidden, so the accessible name must come from here.
               aria-label="Abmelden"
-              className="justify-start group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+              title="Abmelden"
+              className="size-9 text-muted-foreground hover:text-foreground"
             >
-              <LogOut aria-hidden="true" />
-              <span className="group-data-[collapsible=icon]:hidden">
-                Abmelden
-              </span>
+              <LogOut aria-hidden="true" className="size-[1.05rem]" />
             </Button>
           </div>
         ) : null}
