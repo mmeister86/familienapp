@@ -66,7 +66,8 @@ export type FetchCalendarOptions = {
 // Only server-configured HTTPS feed addresses are accepted. webcal:// is
 // the conventional ICS scheme and resolves to https://; anything else that
 // is not HTTPS (plain http, file, data, ...) is a configuration error and
-// is never fetched.
+// is never fetched. Configuration errors (invalid URL, non-HTTPS address,
+// unset env binding) classify as "auth".
 function resolveFeedUrl(url: string): string {
   const trimmed = url.trim();
   const schemeLength = "webcal://".length;
@@ -133,9 +134,18 @@ function classifyStatus(status: number, headers: Headers): never {
 
 // Read the whole body while accounting every byte. Provider Content-Length
 // or ETags are never trusted: acceptance requires the complete stream.
-async function readBoundedText(response: Response): Promise<string> {
+// The abort signal bounds the body read as well as the connect+headers
+// phase: each read races the signal, so a slow-dribbling body cannot
+// outlive the timeout even when the Response stream ignores the signal.
+async function readBoundedText(
+  response: Response,
+  signal?: AbortSignal,
+): Promise<string> {
   if (response.body === null) {
-    const text = await response.text();
+    const text =
+      signal === undefined
+        ? await response.text()
+        : await raceWithAbort(response.text(), signal);
     if (new TextEncoder().encode(text).length > MAX_ICS_BYTES) {
       throw new CalendarFetchError(
         "tooLarge",
@@ -147,20 +157,29 @@ async function readBoundedText(response: Response): Promise<string> {
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    for (;;) {
+      const pending = reader.read();
+      const { done, value } =
+        signal === undefined ? await pending : await raceWithAbort(pending, signal);
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > MAX_ICS_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new CalendarFetchError(
+          "tooLarge",
+          "calendar response exceeds the 32MiB limit",
+        );
+      }
+      chunks.push(value);
     }
-    total += value.byteLength;
-    if (total > MAX_ICS_BYTES) {
+  } catch (error) {
+    if (signal?.aborted) {
       await reader.cancel().catch(() => undefined);
-      throw new CalendarFetchError(
-        "tooLarge",
-        "calendar response exceeds the 32MiB limit",
-      );
     }
-    chunks.push(value);
+    throw error;
   }
   reader.releaseLock();
   const merged = new Uint8Array(total);
@@ -170,6 +189,30 @@ async function readBoundedText(response: Response): Promise<string> {
     offset += chunk.byteLength;
   }
   return new TextDecoder("utf-8").decode(merged);
+}
+
+// Reject as soon as signal aborts, independent of whether the underlying
+// stream honors the fetch abort signal (synthetic Responses ignore it).
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 // Fetch one feed and normalize it through the real ICS parser. Throws
@@ -185,66 +228,84 @@ export async function fetchAndNormalizeCalendar(
   const resolved = resolveFeedUrl(url);
   const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
   const controller = new AbortController();
+  // The timer spans connect+headers AND the body read: it is cleared only
+  // after readBoundedText resolves, so a slow-dribbling body is aborted.
   const timer = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
-  let response: Response;
   try {
-    response = await fetchImpl(resolved, {
-      signal: controller.signal,
-      headers: { accept: "text/calendar, text/plain;q=0.9, */*;q=0.1" },
-    });
-  } catch {
-    if (controller.signal.aborted) {
+    let response: Response;
+    try {
+      response = await fetchImpl(resolved, {
+        signal: controller.signal,
+        headers: { accept: "text/calendar, text/plain;q=0.9, */*;q=0.1" },
+      });
+    } catch {
+      if (controller.signal.aborted) {
+        throw new CalendarFetchError(
+          "timeout",
+          `calendar fetch timed out after ${String(timeoutMs)}ms`,
+        );
+      }
       throw new CalendarFetchError(
-        "timeout",
-        `calendar fetch timed out after ${String(timeoutMs)}ms`,
+        "network",
+        "calendar server could not be reached",
       );
     }
-    throw new CalendarFetchError(
-      "network",
-      "calendar server could not be reached",
-    );
-  } finally {
-    clearTimeout(timer);
-  }
-  // Automatic redirects are followed, but the final address must still be
-  // server-grade HTTPS. Synthetic responses carry no URL and skip the check.
-  const finalUrl = response.url === "" ? resolved : response.url;
-  try {
-    if (new URL(finalUrl).protocol !== "https:") {
+    // Automatic redirects are followed, but the final address must still be
+    // server-grade HTTPS. Synthetic responses carry no URL and skip the check.
+    const finalUrl = response.url === "" ? resolved : response.url;
+    try {
+      if (new URL(finalUrl).protocol !== "https:") {
+        throw new CalendarFetchError(
+          "auth",
+          "calendar redirect target must use HTTPS",
+        );
+      }
+    } catch (error) {
+      if (error instanceof CalendarFetchError) {
+        throw error;
+      }
       throw new CalendarFetchError(
         "auth",
-        "calendar redirect target must use HTTPS",
+        "calendar redirect target is not a valid URL",
       );
     }
-  } catch (error) {
-    if (error instanceof CalendarFetchError) {
+    if (!response.ok) {
+      classifyStatus(response.status, response.headers);
+    }
+    let text: string;
+    try {
+      text = await readBoundedText(response, controller.signal);
+    } catch (error) {
+      if (error instanceof CalendarFetchError) {
+        throw error;
+      }
+      if (controller.signal.aborted) {
+        throw new CalendarFetchError(
+          "timeout",
+          `calendar fetch timed out after ${String(timeoutMs)}ms`,
+        );
+      }
       throw error;
     }
-    throw new CalendarFetchError(
-      "auth",
-      "calendar redirect target is not a valid URL",
-    );
-  }
-  if (!response.ok) {
-    classifyStatus(response.status, response.headers);
-  }
-  const text = await readBoundedText(response);
-  try {
-    return normalizeIcs(text, window, BERLIN_TIMEZONE);
-  } catch (error) {
-    if (
-      error instanceof IcsNormalizeError &&
-      /occurrence limit/.test(error.message)
-    ) {
-      // More than 2000 occurrences: an error, never a truncated success.
-      throw new CalendarFetchError(
-        "tooLarge",
-        "calendar feed exceeds the 2000 occurrence limit",
-      );
+    try {
+      return normalizeIcs(text, window, BERLIN_TIMEZONE);
+    } catch (error) {
+      if (
+        error instanceof IcsNormalizeError &&
+        /occurrence limit/.test(error.message)
+      ) {
+        // More than 2000 occurrences: an error, never a truncated success.
+        throw new CalendarFetchError(
+          "tooLarge",
+          "calendar feed exceeds the 2000 occurrence limit",
+        );
+      }
+      throw error;
     }
-    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -335,6 +396,7 @@ export async function runFetchCycle(
 ): Promise<FetchCycleResult> {
   const rawUrl = env[claim.urlEnvKey];
   if (rawUrl === undefined || rawUrl.trim() === "") {
+    // Unset env binding: a configuration error, classified as "auth".
     await store.fail("auth");
     return "failed";
   }

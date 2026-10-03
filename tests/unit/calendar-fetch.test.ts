@@ -29,6 +29,7 @@ import {
   type FetchCycleStore,
 } from "../../convex/lib/calendarFetch.js";
 import { contentFingerprint } from "../../convex/lib/calendarFingerprint.js";
+import { calendarFeedV1Validator } from "../../convex/lib/calendarValidators.js";
 
 const SECRET_URL = "https://cal.example.com/feed.ics?token=secret123";
 
@@ -155,6 +156,41 @@ describe("fetchAndNormalizeCalendar", () => {
       SECRET_URL,
       octoberWindow(),
       hanging,
+      { timeoutMs: 50 },
+    ).then(
+      () => {
+        throw new Error("expected the fetch to fail");
+      },
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(CalendarFetchError);
+    expect((failure as CalendarFetchError).errorClass).toBe("timeout");
+    expect(Date.now() - startedAt).toBeLessThan(5000);
+    expectRedacted(failure);
+  });
+
+  it("timeoutAbortsASlowBody (timer spans headers and body)", async () => {
+    // Headers arrive at once, then the body dribbles forever: the timeout
+    // must abort the body read, not just connect+headers.
+    const slow = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode("BEGIN:VCALENDAR\r\n"),
+          );
+        },
+        pull() {
+          return new Promise<void>(() => {});
+        },
+      }),
+      { status: 200 },
+    );
+    const dribble = (async () => slow) as unknown as typeof fetch;
+    const startedAt = Date.now();
+    const failure = await fetchAndNormalizeCalendar(
+      SECRET_URL,
+      octoberWindow(),
+      dribble,
       { timeoutMs: 50 },
     ).then(
       () => {
@@ -496,6 +532,115 @@ describe("calendar feed v1 contract fixture", () => {
       ),
     ) as Record<string, unknown>;
   }
+
+  // Recursive check of a plain JSON value against the serializable form of
+  // a real Convex validator (validator.json), so the fixture and
+  // calendarFeedV1Validator cannot drift apart unnoticed.
+  type ValidatorJson = {
+    type: string;
+    value?: unknown;
+    fieldType?: ValidatorJson;
+    optional?: boolean;
+  };
+  function assertMatchesValidator(
+    schema: ValidatorJson,
+    value: unknown,
+    path: string,
+  ): void {
+    const at = (detail: string) => `${path}: ${detail}`;
+    switch (schema.type) {
+      case "any":
+        return;
+      case "string":
+      case "id":
+        expect(typeof value, at(`expected string, got ${typeof value}`)).toBe(
+          "string",
+        );
+        return;
+      case "number":
+      case "float64":
+      case "int64":
+        expect(typeof value, at(`expected number, got ${typeof value}`)).toBe(
+          "number",
+        );
+        return;
+      case "boolean":
+        expect(typeof value, at(`expected boolean, got ${typeof value}`)).toBe(
+          "boolean",
+        );
+        return;
+      case "null":
+        expect(value, at("expected null")).toBeNull();
+        return;
+      case "literal":
+        expect(value, at(`expected literal ${String(schema.value)}`)).toBe(
+          schema.value,
+        );
+        return;
+      case "array": {
+        expect(Array.isArray(value), at("expected array")).toBe(true);
+        for (const [index, item] of (value as unknown[]).entries()) {
+          assertMatchesValidator(
+            schema.value as ValidatorJson,
+            item,
+            `${path}[${String(index)}]`,
+          );
+        }
+        return;
+      }
+      case "object": {
+        expect(
+          typeof value === "object" && value !== null && !Array.isArray(value),
+          at("expected object"),
+        ).toBe(true);
+        const fields = schema.value as Record<
+          string,
+          { fieldType: ValidatorJson; optional: boolean }
+        >;
+        const record = value as Record<string, unknown>;
+        for (const [key, field] of Object.entries(fields)) {
+          if (!(key in record)) {
+            expect(
+              field.optional,
+              at(`missing required field "${key}"`),
+            ).toBe(true);
+            continue;
+          }
+          assertMatchesValidator(field.fieldType, record[key], `${path}.${key}`);
+        }
+        for (const key of Object.keys(record)) {
+          expect(
+            key in fields,
+            at(`unexpected field "${key}" not in the validator`),
+          ).toBe(true);
+        }
+        return;
+      }
+      case "union": {
+        const members = schema.value as ValidatorJson[];
+        const matched = members.some((member) => {
+          try {
+            assertMatchesValidator(member, value, path);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        expect(matched, at("matched no union member")).toBe(true);
+        return;
+      }
+      default:
+        throw new Error(`unsupported validator kind "${schema.type}" at ${path}`);
+    }
+  }
+
+  it("matchesTheRealValidator (fixture parses against calendarFeedV1Validator)", () => {
+    assertMatchesValidator(
+      calendarFeedV1Validator.json as unknown as ValidatorJson,
+      loadFeed(),
+      "feed",
+    );
+  });
 
   it("hasTheVersionedEnvelope (same keys the live feed serves)", () => {
     const feed = loadFeed();

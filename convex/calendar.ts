@@ -165,6 +165,8 @@ async function buildFeed(
   const users = await ctx.db.query("users").collect();
   const bindings = await ctx.db.query("personSourceBindings").collect();
   const calendars: CalendarFeedCalendar[] = [];
+  // Events are grouped per calendar (each entry sorted by startMs); there is
+  // no global time sort across calendars (the Task 5 consumer sorts).
   const events: Array<NormalizedCalendarEvent & { calendarId: string }> = [];
   for (const source of sources) {
     const entry = await calendarEntry(ctx, source, window, now);

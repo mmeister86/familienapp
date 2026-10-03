@@ -14,7 +14,7 @@ const http = httpRouter();
 function unauthorized(): Response {
   return new Response("Unauthorized", {
     status: 401,
-    headers: { "WWW-Authenticate": "Bearer" },
+    headers: { "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" },
   });
 }
 
