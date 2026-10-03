@@ -232,6 +232,7 @@ export const claim = internalMutation({
     await ctx.db.patch(source._id, {
       runningImportId: runId,
       leaseExpiresAt,
+      // Defers the next regular slot while in flight; retry paths overwrite.
       nextAttemptAt: now + source.intervalMs,
     });
     const previousFingerprint = dataImport?.contentFingerprint;
@@ -443,6 +444,7 @@ export const publishUnchanged = internalMutation({
       active.source.publishedImportId !== undefined &&
       active.source.publishedImportId !== active.run._id
     ) {
+      // May mark the still-serving data generation row superseded; reads/cleanup are pointer-based.
       await ctx.db.patch(active.source.publishedImportId, {
         state: "superseded",
       });
@@ -686,20 +688,10 @@ export const cleanup = internalMutation({
     }
 
     // Remaining work: rows still outside retention, or the event budget ran
-    // out while deletable events may remain.
+    // out. Report conservatively: capped budgets may leave deletable events
+    // even when no pending row was observed this call.
     let remaining = pendingRows > 0;
-    if (!remaining && eventsCapped) {
-      const probe = await ctx.db
-        .query("calendarEvents")
-        .withIndex("by_source_import_key", (q) =>
-          q.eq("sourceId", source._id),
-        )
-        .take(1);
-      remaining = probe.some(
-        (row) =>
-          !retainEvents.has(row.importId) && row.importId !== currentRunId,
-      );
-    }
+    remaining ||= eventsCapped;
     return { deleted, remaining };
   },
 });
