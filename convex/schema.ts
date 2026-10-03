@@ -125,4 +125,17 @@ export default defineSchema({
     generatedAt: v.number(),
     receivedAt: v.number(),
   }).index("by_date_kind", ["date", "kind"]),
+
+  // Web Push subscriptions, one row per browser/device. Upserted by endpoint
+  // via `push.subscribe`; dead endpoints (404/410) are pruned by the sender.
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    endpoint: v.string(), // push service URL (unique per device+browser)
+    p256dh: v.string(), // ECDH public key (base64url)
+    auth: v.string(), // auth secret (base64url)
+    userAgent: v.optional(v.string()), // for debugging, set at subscribe time
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
 });
