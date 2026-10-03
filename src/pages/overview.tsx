@@ -25,10 +25,7 @@ function LoadingState() {
 export function OverviewPage() {
   const { token, user } = useSession()
   const children = useQuery(api.overview.children, token ? { token } : "skip")
-  const briefing = useQuery(
-    api.overview.latestBriefing,
-    token && user?.role === "parent" ? { token } : "skip",
-  )
+  const isParent = user?.role === "parent"
 
   // Track the current time so the stale check and day labels stay fresh while
   // the page remains open. Date.now() must not be called during render (purity),
@@ -50,7 +47,7 @@ export function OverviewPage() {
         subtitle={formatLongDay(todayBerlinString(new Date(now)))}
       />
 
-      {briefing ? <BriefingCard briefing={briefing} /> : null}
+      {isParent ? <BriefingCard token={token} now={now} /> : null}
 
       <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2">
         {children.map((child) =>

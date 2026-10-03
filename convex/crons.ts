@@ -90,4 +90,11 @@ crons.interval(
   { hours: 24 },
   internal.ingest.cleanupBriefings,
 );
+// Parents' AI briefing: checks every hour, runs at AUTO_RUN_HOURS (Berlin,
+// DST-safe because the hour is evaluated in Europe/Berlin), prunes old rows.
+crons.hourly(
+  "parent briefing",
+  { minuteUTC: 1 },
+  internal.parentBriefing.autoRun,
+);
 export default crons;

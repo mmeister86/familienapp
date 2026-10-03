@@ -136,6 +136,8 @@
     --color-background: var(--background);
     --color-gold: var(--gold);
     --color-gold-foreground: var(--gold-foreground);
+    --color-briefing: var(--briefing);
+    --color-briefing-foreground: var(--briefing-foreground);
     --color-success: var(--success);
     --color-warning: var(--warning);
     --radius-sm: calc(var(--radius) * 0.6);
@@ -174,6 +176,8 @@
     --ring: #6b7bb0;
     --gold: #e9a800;
     --gold-foreground: #3b2a00;
+    --briefing: #1f2b50;
+    --briefing-foreground: #ffffff;
     --success: #12855a;
     --warning: #b45309;
     --chart-1: #1f2b50;
@@ -213,6 +217,8 @@
     --ring: #7d8cc0;
     --gold: #f5c431;
     --gold-foreground: #2c2000;
+    --briefing: #1b2443;
+    --briefing-foreground: #eceff7;
     --success: #3ccf8e;
     --warning: #f0a33a;
     --chart-1: #dfe5f6;
