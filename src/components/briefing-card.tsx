@@ -1,120 +1,283 @@
 import { useState } from "react"
+import { useMutation, useQuery } from "convex/react"
+import type { FunctionReturnType } from "convex/server"
 import { cn } from "cn"
-import { ChevronDown, Moon, Sun } from "lucide-react"
-import type { BriefingItem } from "../../convex/lib/validators"
+import { Moon, RefreshCw, Sparkles, Sun, TriangleAlert } from "lucide-react"
+import { api } from "../../convex/_generated/api"
+import { Skeleton } from "@/components/ui/skeleton"
 import { formatBerlinTime } from "@/lib/dashboard"
+import { addDaysString, formatShortDay, todayBerlinString } from "@/lib/tasks"
 
-export type BriefingView = {
-  kind: "morning" | "evening"
-  date: string
-  text: string
-  headline?: string
-  items: BriefingItem[]
-  ai: boolean
-  generatedAt: number
-}
+type LatestBriefing = FunctionReturnType<typeof api.parentBriefing.latest>
+type BriefingView = NonNullable<LatestBriefing["briefing"]>
+type BriefingItem = BriefingView["today"][number]
 
-function ItemList({ title, items }: { title: string; items: BriefingItem[] }) {
+const surfaceClassName =
+  "relative overflow-hidden rounded-3xl bg-briefing text-briefing-foreground shadow-[0_16px_40px_-24px_var(--briefing)] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.07)]"
+
+function PersonTag({ item }: { item: BriefingItem }) {
+  if (item.who === null) {
+    return null
+  }
   return (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold opacity-70">{title}</h3>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((item, index) => (
-          <li key={index} className="flex items-start gap-2.5 text-[0.9375rem]">
-            <span aria-hidden="true" className="w-5 shrink-0 text-center">
-              {item.icon}
-            </span>
-            <span className="min-w-0">
-              {item.who ? (
-                <span className="mr-1 inline-flex items-center gap-1.5 font-semibold">
-                  {item.color ? (
-                    <span
-                      aria-hidden="true"
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                  ) : null}
-                  {item.who}:
-                </span>
-              ) : null}
-              {item.text}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <span className="mr-1.5 inline-flex items-center gap-1.5 align-[0.05em] text-[0.8125rem] font-semibold">
+      <span
+        aria-hidden="true"
+        className="size-2 rounded-full ring-2 ring-white/15"
+        style={{ backgroundColor: item.color ?? "currentColor" }}
+      />
+      {item.who}
+    </span>
   )
 }
 
+function ItemList({
+  title,
+  items,
+  id,
+}: {
+  title: string
+  items: BriefingItem[]
+  id: string
+}) {
+  return (
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-2.5">
+      <h3 id={id} className="text-[0.8125rem] font-semibold opacity-60">
+        {title}
+      </h3>
+      <ul className="flex flex-col gap-2.5">
+        {items.map((item, index) => (
+          <li key={index} className="flex items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/10 text-base leading-none"
+            >
+              {item.emoji}
+            </span>
+            <p className="min-w-0 pt-1 text-[0.9375rem] leading-snug">
+              <PersonTag item={item} />
+              <span className="opacity-90">{item.text}</span>
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function RegenerateButton({
+  busy,
+  onClick,
+  label,
+}: {
+  busy: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      aria-label={label}
+      title={label}
+      className="pressable flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[0.8125rem] font-semibold outline-none hover:bg-white/15 focus-visible:ring-3 focus-visible:ring-white/40 disabled:opacity-70"
+    >
+      <RefreshCw
+        aria-hidden="true"
+        className={cn("size-4", busy && "animate-spin motion-reduce:animate-none")}
+      />
+      <span className="hidden sm:inline">
+        {busy ? "Wird erstellt …" : "Neu erstellen"}
+      </span>
+    </button>
+  )
+}
+
+function createdLabel(briefing: BriefingView, now: number): string {
+  const time = formatBerlinTime(briefing.generatedAt)
+  const today = todayBerlinString(new Date(now))
+  const day =
+    briefing.date === today
+      ? "heute"
+      : briefing.date === addDaysString(today, -1)
+        ? "gestern"
+        : `am ${formatShortDay(briefing.date)}`
+  const by =
+    briefing.trigger === "auto"
+      ? "automatisch"
+      : briefing.requestedByName !== null
+        ? `von ${briefing.requestedByName}`
+        : null
+  return `${day} um ${time}${by !== null ? `, ${by}` : ""}`
+}
+
 /**
- * The parents' daily briefing — the one dark (navy) surface on the overview.
- * Starts expanded; the toggle collapses it to the headline.
+ * The parents' AI briefing (generated by the app via Gemini). Shows the
+ * newest briefing, lets parents create a fresh one, and reports running and
+ * failed attempts in place.
  */
-export function BriefingCard({ briefing }: { briefing: BriefingView }) {
-  const [expanded, setExpanded] = useState(true)
-  const tonight = briefing.items.filter((item) => item.section === "tonight")
-  const day = briefing.items.filter((item) => item.section === "day")
+export function BriefingCard({ token, now }: { token: string; now: number }) {
+  const data = useQuery(api.parentBriefing.latest, { token })
+  const request = useMutation(api.parentBriefing.request)
+  const [requesting, setRequesting] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
+
+  const busy = requesting || data?.generating === true
+
+  const regenerate = async (): Promise<void> => {
+    if (busy) {
+      return
+    }
+    setRequesting(true)
+    setRequestError(null)
+    try {
+      const result = await request({ token })
+      if (!result.started && result.reason === "limit") {
+        setRequestError(
+          "Für heute sind genug Zusammenfassungen erstellt. Morgen geht es wieder.",
+        )
+      }
+    } catch {
+      setRequestError("Konnte nicht gestartet werden. Bitte erneut versuchen.")
+    } finally {
+      setRequesting(false)
+    }
+  }
+
+  if (data === undefined) {
+    return <Skeleton className="h-56 rounded-3xl bg-muted" aria-hidden="true" />
+  }
+
+  const error = requestError ?? data.error
+  const briefing = data.briefing
+
+  const errorBanner =
+    error !== null && !busy ? (
+      <p
+        role="alert"
+        className="flex items-start gap-2 rounded-2xl bg-white/10 px-3.5 py-2.5 text-sm"
+      >
+        <TriangleAlert
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-gold"
+        />
+        <span>{error}</span>
+      </p>
+    ) : null
+
+  if (briefing === null) {
+    return (
+      <section aria-label="Zusammenfassung" className={cn(surfaceClassName, "p-5 sm:p-6")}>
+        <div className="flex flex-col gap-4">
+          <span className="flex items-center gap-1.5 text-[0.8125rem] font-medium opacity-60">
+            <Sparkles aria-hidden="true" className="size-4" />
+            Zusammenfassung
+          </span>
+          {busy ? (
+            <div className="flex flex-col gap-3" role="status">
+              <span className="sr-only">Zusammenfassung wird erstellt</span>
+              <span className="h-6 w-2/3 animate-pulse rounded-lg bg-white/15" />
+              <span className="h-4 w-full animate-pulse rounded-lg bg-white/10" />
+              <span className="h-4 w-5/6 animate-pulse rounded-lg bg-white/10" />
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold tracking-tight">
+                  Noch keine Zusammenfassung für euch
+                </h2>
+                <p className="text-[0.9375rem] opacity-75">
+                  Die KI fasst Aufgaben, Schule und Termine des Tages zusammen.
+                  Automatisch um 6 und 16 Uhr – oder jetzt sofort.
+                </p>
+              </div>
+              {errorBanner}
+              <button
+                type="button"
+                onClick={() => void regenerate()}
+                className="pressable flex h-11 items-center justify-center gap-2 self-start rounded-xl bg-white px-4 text-sm font-semibold text-[#1f2b50] outline-none focus-visible:ring-3 focus-visible:ring-white/40"
+              >
+                <Sparkles aria-hidden="true" className="size-4" />
+                Jetzt erstellen
+              </button>
+            </>
+          )}
+        </div>
+      </section>
+    )
+  }
+
   const KindIcon = briefing.kind === "morning" ? Sun : Moon
+  const hasItems = briefing.today.length > 0 || briefing.ahead.length > 0
 
   return (
     <section
-      aria-labelledby="briefing-heading"
-      className="overflow-hidden rounded-3xl bg-primary text-primary-foreground shadow-[0_12px_32px_-18px_var(--primary)]"
+      aria-labelledby="briefing-headline"
+      aria-busy={busy}
+      className={cn(surfaceClassName, "p-5 sm:p-6")}
     >
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        aria-controls="briefing-body"
-        className="flex w-full items-start gap-3 px-5 pt-5 pb-4 text-left outline-none focus-visible:bg-primary-foreground/10"
-      >
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex items-center gap-1.5 text-sm font-medium opacity-70">
-            <KindIcon aria-hidden="true" className="size-4" />
-            <span id="briefing-heading">
-              {briefing.kind === "morning"
-                ? "Briefing am Morgen"
-                : "Briefing am Abend"}
+      <div className="flex flex-col gap-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="flex items-center gap-1.5 text-[0.8125rem] font-medium opacity-60">
+              <KindIcon aria-hidden="true" className="size-4 shrink-0" />
+              <span className="truncate">
+                {briefing.kind === "morning" ? "Morgen-Briefing" : "Abend-Briefing"}
+              </span>
             </span>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">
-              {formatBerlinTime(briefing.generatedAt)}
-            </span>
-          </span>
-          {briefing.headline ? (
-            <span className="text-xl leading-snug font-bold tracking-tight text-balance">
+            <h2
+              id="briefing-headline"
+              className="text-[1.375rem] leading-tight font-bold tracking-[-0.02em] text-balance sm:text-2xl"
+            >
               {briefing.headline}
-            </span>
-          ) : null}
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            "mt-1 size-5 shrink-0 opacity-70 transition-transform duration-200",
-            expanded && "rotate-180",
-          )}
-        />
-        <span className="sr-only">
-          {expanded ? "Briefing einklappen" : "Briefing ausklappen"}
-        </span>
-      </button>
-      {expanded ? (
-        <div id="briefing-body" className="flex flex-col gap-4 px-5 pb-5">
-          <p className="text-[0.9375rem] leading-relaxed whitespace-pre-wrap opacity-85">
-            {briefing.text}
-          </p>
-          {day.length > 0 || tonight.length > 0 ? (
-            <div className="grid gap-4 rounded-2xl bg-primary-foreground/8 p-4 sm:grid-cols-2">
-              {day.length > 0 ? (
-                <ItemList title="Tagsüber" items={day} />
-              ) : null}
-              {tonight.length > 0 ? (
-                <ItemList title="Heute Abend" items={tonight} />
-              ) : null}
-            </div>
-          ) : null}
+            </h2>
+          </div>
+          <RegenerateButton
+            busy={busy}
+            onClick={() => void regenerate()}
+            label={busy ? "Zusammenfassung wird erstellt" : "Zusammenfassung neu erstellen"}
+          />
         </div>
-      ) : null}
+
+        {briefing.summary !== "" ? (
+          <p
+            className={cn(
+              "max-w-[65ch] text-[1rem] leading-relaxed opacity-85 transition-opacity",
+              busy && "opacity-50",
+            )}
+          >
+            {briefing.summary}
+          </p>
+        ) : null}
+
+        {errorBanner}
+
+        {hasItems ? (
+          <div
+            className={cn(
+              "grid gap-5 border-t border-white/10 pt-5 transition-opacity md:grid-cols-2 md:gap-8",
+              busy && "opacity-50",
+            )}
+          >
+            {briefing.today.length > 0 ? (
+              <ItemList id="briefing-today" title="Heute" items={briefing.today} />
+            ) : null}
+            {briefing.ahead.length > 0 ? (
+              <ItemList id="briefing-ahead" title="Im Blick" items={briefing.ahead} />
+            ) : null}
+          </div>
+        ) : null}
+
+        <p className="flex items-center gap-1.5 text-xs opacity-55">
+          <Sparkles aria-hidden="true" className="size-3.5 shrink-0" />
+          <span>
+            {busy
+              ? "Neue Zusammenfassung wird erstellt …"
+              : `KI-Zusammenfassung, erstellt ${createdLabel(briefing, now)}`}
+          </span>
+        </p>
+      </div>
     </section>
   )
 }

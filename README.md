@@ -114,6 +114,10 @@ docker run --rm -p 8080:80 familienapp
   einmalig generieren mit `pnpm dlx web-push generate-vapid-keys`; lokal und
   in Prod dürfen verschiedene Paare verwendet werden) und optional
   `VAPID_SUBJECT` (Kontakt-URL, Default `mailto:familienapp@matthias.lol`).
+  Für das Eltern-Briefing auf der Übersicht: `GEMINI_API_KEY` (Pflicht) und
+  optional `GEMINI_MODEL` (Default `gemini-3.8-flash`). Das Briefing wird
+  automatisch um 6 und 16 Uhr (Berlin) erstellt und kann von den Eltern
+  jederzeit neu erzeugt werden (max. 20× pro Tag).
   Hinweis: iOS liefert Web Push erst ab iOS 16.4 und nur, wenn die PWA auf
   dem Homescreen installiert ist.
 
