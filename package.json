@@ -23,6 +23,7 @@
     "convex": "^1.46.0",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.49.0",
+    "node-ical": "0.26.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.4.0",
@@ -30,6 +31,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/canvas-confetti": "^1.9.0",
@@ -38,6 +40,7 @@
     "@types/react-dom": "^19.2.7",
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^6.1.1",
+    "convex-test": "0.0.60",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",

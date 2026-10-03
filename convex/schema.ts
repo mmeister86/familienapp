@@ -164,4 +164,94 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_endpoint", ["endpoint"]),
+
+  // Explicit calendar source registry (Task 1 of the calendar pilot).
+  // sourceKey is the stable identity: renames and reorders keep the same
+  // document (array position is never identity). New sources start disabled
+  // in shadow mode; configurationRevision revokes in-flight commit
+  // permission on every config/mode change. No secrets in this table —
+  // credentials stay in server-side Convex/Coolify configuration.
+  calendarSources: defineTable({
+    sourceKey: v.string(),
+    name: v.string(),
+    kind: v.union(v.literal("ics"), v.literal("google")),
+    url: v.optional(v.string()), // ICS feed URL (kind "ics" only)
+    color: v.optional(v.string()),
+    enabled: v.boolean(),
+    mode: v.union(v.literal("shadow"), v.literal("active")),
+    sortOrder: v.number(),
+    intervalMs: v.number(),
+    configurationRevision: v.number(),
+    lastAttemptAt: v.optional(v.number()),
+    lastSuccessAt: v.optional(v.number()),
+    lastResult: v.optional(
+      v.union(v.literal("success"), v.literal("partial"), v.literal("error")),
+    ),
+    lastError: v.optional(v.string()), // sanitized, safe for parent UI
+  }).index("by_sourceKey", ["sourceKey"]),
+
+  // One row per import execution. generation pins the source's
+  // configurationRevision at start; the commit (later task) only accepts
+  // generation === current revision, so config/mode changes revoke in-flight
+  // runs. Only a "committed" import covering the declared window counts as a
+  // successful current stand for its range.
+  calendarImports: defineTable({
+    sourceId: v.id("calendarSources"),
+    generation: v.number(),
+    windowStart: v.string(), // YYYY-MM-DD Berlin, inclusive
+    windowEnd: v.string(), // YYYY-MM-DD Berlin, exclusive
+    status: v.union(
+      v.literal("running"),
+      v.literal("committed"),
+      v.literal("superseded"),
+      v.literal("failed"),
+    ),
+    eventCount: v.optional(v.number()),
+    contentHash: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_source", ["sourceId"]),
+
+  // Normalized calendar events, stored per source. occurrenceKey is
+  // occurrenceKey(uid, recurrenceId); the same UID in different calendars
+  // stays distinct via the leading sourceId (no global uniqueness).
+  calendarEvents: defineTable({
+    sourceId: v.id("calendarSources"),
+    uid: v.string(),
+    recurrenceId: v.optional(v.string()),
+    occurrenceKey: v.string(),
+    title: v.string(),
+    start: v.string(), // RFC 3339, or YYYY-MM-DD when allDay
+    end: v.optional(v.string()),
+    allDay: v.boolean(),
+    location: v.optional(v.string()),
+    importId: v.optional(v.id("calendarImports")),
+  })
+    .index("by_source", ["sourceId"])
+    .index("by_source_occurrence", ["sourceId", "occurrenceKey"]),
+
+  // Explicit person/source bindings (no first-name guessing). The triple
+  // (userId, kind, externalId) is unique; ambiguous mappings surface as
+  // configuration errors instead of auto-linking.
+  personSourceBindings: defineTable({
+    userId: v.id("users"),
+    kind: v.union(
+      v.literal("calendar"),
+      v.literal("school"),
+      v.literal("meal"),
+    ),
+    externalId: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_lookup", ["userId", "kind", "externalId"]),
+
+  // Single-family backend settings (writer epoch, mode switches, ...).
+  // Reserved for later pilot tasks; the table exists so the contract is
+  // complete from the start.
+  familyBackendSettings: defineTable({
+    key: v.string(),
+    value: v.union(v.string(), v.number(), v.boolean()),
+    revision: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });
