@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Outlet } from "react-router"
 import { AppSidebar } from "@/components/app-sidebar"
 import { BottomNav } from "@/components/bottom-nav"
+import { NotificationSettings } from "@/components/notification-settings"
 import { OfflineBanner } from "@/components/offline-banner"
 import { useSession } from "@/hooks/useSession"
 import { useShortcuts } from "@/hooks/useShortcuts"
@@ -69,6 +70,7 @@ export function AppShell() {
                 the role-filtered nav and the footer logout (no room for those
                 in the bottom nav). */}
             <SidebarTrigger />
+            <NotificationSettings />
             <span className="text-base font-semibold lg:hidden">
               Familienapp
             </span>
