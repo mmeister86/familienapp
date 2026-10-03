@@ -459,4 +459,44 @@ describe("calendar.forUser", () => {
       t.query(api.calendar.forUser, { token: "bogus-token" }),
     ).rejects.toThrow();
   });
+
+  it("danglingPersonBindingStaysHiddenFromParents (fail closed on deleted users)", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    const child = await createChildSession(t);
+    await t.mutation(api.calendarSources.setConfigured, {
+      token: parent.token,
+      configured: true,
+    });
+    await publishCentralSource(t, parent.token, BASE_SOURCE, [
+      eventAt("family-1", 0, 1),
+    ]);
+    await publishCentralSource(
+      t,
+      parent.token,
+      {
+        ...BASE_SOURCE,
+        sourceKey: "school",
+        name: "Schule",
+        color: "#16a34a",
+        panel: "school",
+        order: 1,
+        personIds: [child.userId],
+        urlEnvKey: "SCHOOL_CALENDAR_URL",
+      },
+      [eventAt("school-1", 0, 1)],
+    );
+    // Deleting the child leaves a binding to a person that no longer
+    // resolves. The personal stand must not become parent-visible through
+    // the dangling id.
+    await t.run(async (ctx) => {
+      await ctx.db.delete(child.userId);
+    });
+    const parentFeed = await t.query(api.calendar.forUser, {
+      token: parent.token,
+    });
+    expect(
+      parentFeed.calendars.map((calendar) => calendar.sourceKey),
+    ).toEqual(["family"]);
+  });
 });

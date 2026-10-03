@@ -223,6 +223,12 @@ export const forUser = query({
         if (source.personIds.length === 0) {
           return true;
         }
+        // Fail closed: a binding to a deleted person resolves to no role, so
+        // a personal stand must never become parent-visible through a
+        // dangling id.
+        if (source.personIds.some((personId) => !roles.has(personId))) {
+          return false;
+        }
         return !source.personIds.every(
           (personId) => roles.get(personId) === "child",
         );

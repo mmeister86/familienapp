@@ -310,8 +310,11 @@ export async function fetchAndNormalizeCalendar(
 }
 
 // Split normalized events into stage() batches of at most MAX_STAGE_EVENTS
-// rows and MAX_STAGE_BYTES serialized JSON. A single event larger than the
-// byte bound is emitted alone so the caller can reject it as tooLarge.
+// rows and MAX_STAGE_BYTES serialized JSON. Sizes are UTF-8 bytes (the unit
+// the Convex argument limit counts), not JS string length: multibyte titles
+// would otherwise let a batch overflow the bound. A single event larger than
+// the byte bound is emitted alone so the caller can reject it as tooLarge.
+const utf8Bytes = new TextEncoder();
 export function chunkForStaging(
   events: NormalizedCalendarEvent[],
 ): NormalizedCalendarEvent[][] {
@@ -319,7 +322,7 @@ export function chunkForStaging(
   let current: NormalizedCalendarEvent[] = [];
   let currentBytes = 2; // JSON "[]"
   for (const event of events) {
-    const eventBytes = JSON.stringify(event).length;
+    const eventBytes = utf8Bytes.encode(JSON.stringify(event)).length;
     const grown =
       current.length === 0
         ? eventBytes + 2

@@ -353,6 +353,33 @@ describe("chunkForStaging", () => {
     }
     expect(batches.flat()).toHaveLength(250);
   });
+
+  it("measuresStagingBatchesInUtf8Bytes (multibyte titles cannot overflow 256KiB)", async () => {
+    const window = octoberWindow();
+    const text = loadCalendarFixture("allday-exclusive-end.ics");
+    const sample = await fetchAndNormalizeCalendar(
+      "https://cal.example.com/ok.ics",
+      window,
+      okFetch(text),
+    );
+    // Each title is 50000 emoji: 100000 JS string units but 200000 UTF-8
+    // bytes. Two events fit the byte bound in string units yet exceed it in
+    // bytes, so byte accounting must split them.
+    const wide = Array.from({ length: 2 }, (_, index) => ({
+      ...sample[index % sample.length],
+      key: occurrenceKey(`breadcrumb-wide-${String(index)}`, undefined),
+      uid: `breadcrumb-wide-${String(index)}`,
+      title: "🎉".repeat(50000),
+    }));
+    const batches = chunkForStaging(wide);
+    expect(batches).toHaveLength(2);
+    for (const batch of batches) {
+      expect(Buffer.byteLength(JSON.stringify(batch), "utf8")).toBeLessThanOrEqual(
+        256 * 1024,
+      );
+    }
+    expect(batches.flat()).toHaveLength(2);
+  });
 });
 
 describe("runFetchCycle", () => {
