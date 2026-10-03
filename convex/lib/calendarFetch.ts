@@ -438,7 +438,7 @@ export async function runFetchCycle(
 
   const batches = chunkForStaging(events);
   for (const [index, batch] of batches.entries()) {
-    if (batch.length === 1 && JSON.stringify(batch).length > MAX_STAGE_BYTES) {
+    if (batch.length === 1 && utf8Bytes.encode(JSON.stringify(batch)).length > MAX_STAGE_BYTES) {
       // A single event that cannot be staged within the argument bound.
       await store.fail("tooLarge");
       return "failed";

@@ -97,11 +97,11 @@ const SANITIZED_ERROR_MESSAGES: Record<CalendarErrorClass, string> = {
   network: "Der Kalenderserver war nicht erreichbar.",
   rateLimited:
     "Der Kalenderserver bittet um eine Pause (zu viele Anfragen).",
-  server: "Der Kalenderserver meldet einen voruebergehenden Fehler.",
-  auth: "Die Kalenderanmeldung ist fehlgeschlagen. Bitte die Konfiguration pruefen.",
+  server: "Der Kalenderserver meldet einen vorübergehenden Fehler.",
+  auth: "Die Kalenderanmeldung ist fehlgeschlagen. Bitte die Konfiguration prüfen.",
   parse:
-    "Die Kalenderdaten konnten nicht gelesen werden. Bitte die Konfiguration pruefen.",
-  tooLarge: "Die Kalenderantwort ist zu gross und wurde abgelehnt.",
+    "Die Kalenderdaten konnten nicht gelesen werden. Bitte die Konfiguration prüfen.",
+  tooLarge: "Die Kalenderantwort ist zu groß und wurde abgelehnt.",
 };
 
 const claimResultValidator = v.union(

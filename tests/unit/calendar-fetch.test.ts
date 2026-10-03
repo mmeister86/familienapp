@@ -349,7 +349,7 @@ describe("chunkForStaging", () => {
     const batches = chunkForStaging(many);
     expect(batches.map((batch) => batch.length)).toEqual([100, 100, 50]);
     for (const batch of batches) {
-      expect(JSON.stringify(batch).length).toBeLessThanOrEqual(256 * 1024);
+      expect(Buffer.byteLength(JSON.stringify(batch), "utf8")).toBeLessThanOrEqual(256 * 1024);
     }
     expect(batches.flat()).toHaveLength(250);
   });
