@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as calendarSources from "../calendarSources.js";
+import type * as calendarSync from "../calendarSync.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
@@ -50,6 +51,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   calendarSources: typeof calendarSources;
+  calendarSync: typeof calendarSync;
   crons: typeof crons;
   http: typeof http;
   ingest: typeof ingest;
