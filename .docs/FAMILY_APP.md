@@ -9,6 +9,12 @@ All requests go **from familydash to Convex** (HTTP actions on the "site" URL, e
 | `POST /ingest/child`    | wall → app | ingest token                     | `FAMILY_APP_INGEST_TOKEN`    | `INGEST_TOKEN`    |
 | `POST /ingest/briefing` | wall → app | ingest token                     | `FAMILY_APP_INGEST_TOKEN`    | `INGEST_TOKEN`    |
 | `GET /todos?days=2`     | app → wall | dashboard token                  | `FAMILY_APP_DASHBOARD_TOKEN` | `DASHBOARD_TOKEN` |
+| `GET /dashboard/calendars` | app → wall | calendar token                | `FAMILY_APP_CALENDAR_TOKEN`  | `CALENDAR_DASHBOARD_TOKEN` |
+
+The calendar token authorizes only `GET /dashboard/calendars` — never ingest, parent functions or the legacy
+dashboard token's endpoints, and vice versa. Calendar rollout order, shadow comparison and rollback live in the
+dashboard repo (`docs/CONVEX_CALENDAR_ROLLOUT.md`); the canonical v1 fixture both sides test against is
+`tests/fixtures/calendar-feed-v1.json` (byte-identical to the dashboard's `testdata/calendar-feed-v1.json`).
 
 Answers: `2xx` = ok (body ignored for POSTs), `400` invalid payload (message in the body), `401` wrong token.
 Optional fields are **omitted, never `null`** (fits `v.optional(...)`). Dates are `YYYY-MM-DD` in Europe/Berlin,
@@ -84,7 +90,8 @@ export const childSnapshotPayload = v.object({
 ```
 
 Appointments: the child's school calendar (`CALENDAR_n_PANEL=school` with the child's name, or the fixed
-timetable's `calendar`) plus `FAMILY_APP_<SLUG>_CALENDARS`.
+timetable's `calendar`) plus `FAMILY_APP_<SLUG>_CALENDARS`. In `CALENDAR_SOURCE=convex` mode the wall resolves the
+same appointments through explicit central bindings instead of names (see `GET /dashboard/calendars` below).
 
 ## `POST /ingest/briefing`
 
@@ -148,3 +155,16 @@ Which tasks to return: every instance with `date` in the window, **plus** open/p
 What the wall does with it: today's tasks of a child go into that child's card (⭐ points, ⏳ for `pending`);
 one-offs get a due tag ("heute fällig" / "überfällig"); `missed` is ignored. The briefing gets every person's
 open tasks, the number of `pending` ones (parents should confirm) and the children's points.
+
+## `GET /dashboard/calendars`
+
+Central calendar feed (`CalendarFeedV1`, served by `convex/calendar.ts` via `convex/http.ts`,
+`Cache-Control: no-store`). Only active `mode: "convex"` calendars with their last published stand;
+`mode: "shadow"` stays parent-only, `local` is never polled centrally. `503` while unconfigured or when the
+response would exceed 4 MiB; an explicitly empty setup returns full v1 with empty arrays. No env names, URLs,
+PINs, session tokens or raw responses anywhere in the output. `generatedAt` is feed build time, never source
+freshness; per-source `lastSuccessAt`/`coverage` belong to the published generation. `calendar.forUser(token)`
+is the role-scoped app-session variant: children see only explicitly assigned personal calendars, parents keep
+the family stand except child-assigned calendars, and bindings to deleted persons stay hidden from everyone
+(fail closed). Shape details (fields, freshness values, stable ids) mirror the dashboard repo's
+`docs/FAMILY_APP.md` section of the same name; the shared fixture is `tests/fixtures/calendar-feed-v1.json`.
