@@ -322,6 +322,23 @@ describe("normalizeIcs", () => {
     ).toThrow(IcsNormalizeError);
   });
 
+  it("unknownTzidIsRejected (custom zones throw, never host-local guesses)", () => {
+    // Whole-feed rejection, no partial success — identical under any host TZ
+    // (node-ical would otherwise guess 17:00Z under TZ=UTC, 21:00Z under
+    // TZ=America/New_York).
+    expect(() =>
+      normalizeIcs(loadFixture("unknown-tzid.ics"), FALL_WINDOW, BERLIN),
+    ).toThrow(IcsNormalizeError);
+    // Same for RECURRENCE-ID overrides carrying an unknown zone.
+    expect(() =>
+      normalizeIcs(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nBEGIN:VEVENT\r\nUID:x\r\nDTSTAMP:20260101T000000Z\r\nDTSTART;TZID=Europe/Berlin:20261006T170000\r\nDTEND;TZID=Europe/Berlin:20261006T180000\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:x\r\nDTSTAMP:20260101T000000Z\r\nDTSTART;TZID=Europe/Berlin:20261007T170000\r\nRECURRENCE-ID;TZID=Customized Time Zone:20261007T170000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+        FALL_WINDOW,
+        BERLIN,
+      ),
+    ).toThrow(IcsNormalizeError);
+  });
+
   it("tooManyOccurrencesIsNotPartialSuccess (oversized series throw, not truncate)", () => {
     expect(() =>
       normalizeIcs(

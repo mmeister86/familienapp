@@ -360,6 +360,11 @@ function parseRawDate(value: string, params: string): RawDateTime {
     return { kind: "utc", tzid: undefined, date: undefined, parts };
   }
   if (tzid !== undefined) {
+    // Resolve now so unknown/custom zones throw here during raw validation
+    // (DTSTART/DTEND/RECURRENCE-ID via validateRawBlock, EXDATE/RDATE/PERIOD
+    // via their expansion) — before node-ical's host-timezone guess in
+    // instantOf() is ever trusted.
+    resolveZoneName(tzid);
     return { kind: "tzid", tzid, date: undefined, parts };
   }
   return { kind: "floating", tzid: undefined, date: undefined, parts };
