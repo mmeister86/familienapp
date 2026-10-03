@@ -16,7 +16,7 @@ export default defineConfig({
       {
         test: {
           name: "convex",
-          environment: "node",
+          environment: "edge-runtime",
           include: ["tests/convex/**/*.test.ts"],
           testTimeout: 60000,
           hookTimeout: 60000,

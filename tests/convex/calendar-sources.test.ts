@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api.js";
 import type { Id } from "../../convex/_generated/dataModel.js";
-import { calendarWindow } from "../../convex/lib/calendarPolicy.js";
+import { calendarWindow, occurrenceKey } from "../../convex/lib/calendarPolicy.js";
 import {
   createChildSession,
   createParentSession,
@@ -220,7 +220,7 @@ describe("calendarEvents identity", () => {
         await ctx.db.insert("calendarEvents", {
           sourceId,
           uid: "shared-uid@example.test",
-          occurrenceKey: "shared-uid@example.test",
+          occurrenceKey: occurrenceKey("shared-uid@example.test", undefined),
           title: "Elternabend",
           start: "2026-10-10T19:00:00+02:00",
           allDay: false,
