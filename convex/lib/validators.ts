@@ -80,6 +80,14 @@ export const briefingItemValidator = v.object({
   text: v.string(),
 });
 
+// One point of the parents' AI briefing (convex/parentBriefing.ts). `who` is
+// a user slug or "familie".
+export const parentBriefingItemValidator = v.object({
+  who: v.string(),
+  emoji: v.string(),
+  text: v.string(),
+});
+
 export const briefingFields = {
   kind: v.union(v.literal("morning"), v.literal("evening")),
   date: v.string(), // the day it is about: today (morning) / tomorrow (evening)
