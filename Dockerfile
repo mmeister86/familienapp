@@ -5,7 +5,9 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 # Pin pnpm so the frozen lockfile is installed identically to CI/local.
-RUN corepack enable && corepack prepare pnpm@12.8.1 --activate
+# (Bypass corepack: corepack <0.31 hardcodes pnpm's old bin/pnpm.cjs layout,
+# which pnpm >=12 no longer ships -> "Cannot find module .../bin/pnpm.cjs".)
+RUN npm install -g pnpm@12.8.1
 
 # Workspace config carries pnpm build approvals (allowBuilds: esbuild).
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

@@ -17,8 +17,5 @@ node_modules
 # Build output is produced inside the image
 dist
 
-# Convex backend data (dev uses a Docker volume, not files in the repo)
-convex/_generated
-
 *.log
 .DS_Store
