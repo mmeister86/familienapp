@@ -5,6 +5,7 @@ import { Check, Clock } from "lucide-react"
 import { api } from "../../convex/_generated/api"
 import { AssigneeChip, PointsChip } from "@/components/chips"
 import { useSession } from "@/hooks/useSession"
+import { celebrateCompletion } from "@/lib/confetti"
 import { formatShortDay, type TaskInstanceItem } from "@/lib/tasks"
 
 type TaskItemProps = {
@@ -43,6 +44,11 @@ export function TaskItem({ item, token, overdue = false }: TaskItemProps) {
         await undo({ token, instanceId: item._id })
       } else {
         await complete({ token, instanceId: item._id })
+        // Celebrate only the completion itself (not undo/withdraw), and only
+        // for kids. celebrateCompletion honours reduced motion.
+        if (user?.role === "child") {
+          celebrateCompletion()
+        }
       }
     } catch {
       setError("Speichern fehlgeschlagen. Bitte erneut versuchen.")
