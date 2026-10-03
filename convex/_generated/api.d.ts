@@ -9,6 +9,8 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as calendar from "../calendar.js";
+import type * as calendarFetch from "../calendarFetch.js";
 import type * as calendarSources from "../calendarSources.js";
 import type * as calendarSync from "../calendarSync.js";
 import type * as crons from "../crons.js";
@@ -19,6 +21,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authErrors from "../lib/authErrors.js";
 import type * as lib_briefing from "../lib/briefing.js";
 import type * as lib_calendarPolicy from "../lib/calendarPolicy.js";
+import type * as lib_calendarFetch from "../lib/calendarFetch.js";
 import type * as lib_calendarTypes from "../lib/calendarTypes.js";
 import type * as lib_calendarValidators from "../lib/calendarValidators.js";
 import type * as lib_dates from "../lib/dates.js";
@@ -50,6 +53,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  calendar: typeof calendar;
+  calendarFetch: typeof calendarFetch;
   calendarSources: typeof calendarSources;
   calendarSync: typeof calendarSync;
   crons: typeof crons;
@@ -60,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   "lib/authErrors": typeof lib_authErrors;
   "lib/briefing": typeof lib_briefing;
   "lib/calendarPolicy": typeof lib_calendarPolicy;
+  "lib/calendarFetch": typeof lib_calendarFetch;
   "lib/calendarTypes": typeof lib_calendarTypes;
   "lib/calendarValidators": typeof lib_calendarValidators;
   "lib/dates": typeof lib_dates;

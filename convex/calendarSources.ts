@@ -5,6 +5,7 @@
 
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel.js";
 import { requireParent } from "./lib/auth";
 import { calendarWindow } from "./lib/calendarPolicy";
@@ -25,6 +26,9 @@ import type { MutationCtx } from "./_generated/server";
 
 const SETTINGS_KEY = "calendars";
 const MAX_PERSON_IDS = 50;
+// Manual refresh is allowed at the earliest this long after the last
+// started attempt; a valid running import is never double-started.
+const MANUAL_REFRESH_THROTTLE_MS = 60000;
 
 function configError(message: string): never {
   throw new ConvexError(`CalendarConfigError: ${message}`);
@@ -218,6 +222,95 @@ export const save = mutation({
       intervalMs,
       configGeneration: 1,
     });
+  },
+});
+
+// Explicit setup flag for the calendar feed (Task 4). A missing settings
+// document or configured=false means "not set up yet" (the HTTP feed
+// answers 503); a deliberately empty selection uses configured=true and
+// serves the full v1 document with empty arrays. Every change bumps the
+// global configurationRevision served to feed readers.
+export const setConfigured = mutation({
+  args: { token: v.string(), configured: v.boolean() },
+  returns: v.object({ configurationRevision: v.number() }),
+  handler: async (ctx, args) => {
+    await requireParent(ctx, args.token);
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("familyBackendSettings")
+      .withIndex("by_key", (q) => q.eq("key", SETTINGS_KEY))
+      .unique();
+    if (existing === null) {
+      await ctx.db.insert("familyBackendSettings", {
+        key: SETTINGS_KEY,
+        configurationRevision: 1,
+        configured: args.configured,
+        berlinDate: todayBerlin(now),
+        updatedAt: now,
+      });
+      return { configurationRevision: 1 };
+    }
+    const configurationRevision = existing.configurationRevision + 1;
+    await ctx.db.patch(existing._id, {
+      configurationRevision,
+      configured: args.configured,
+      berlinDate: todayBerlin(now),
+      updatedAt: now,
+    });
+    return { configurationRevision };
+  },
+});
+
+// Bounded manual refresh (Task 4, parent-only). Schedules the same central
+// fetch action as the minute dispatcher and defers the next regular slot.
+// Fails closed without scheduling when the source is not centrally polled,
+// a valid import is already running ("running"), or the last attempt
+// started less than a minute ago ("throttled").
+export const requestRefresh = mutation({
+  args: { token: v.string(), sourceId: v.id("calendarSources") },
+  returns: v.object({
+    started: v.boolean(),
+    reason: v.union(v.literal("running"), v.literal("throttled"), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    await requireParent(ctx, args.token);
+    const now = Date.now();
+    const source = await ctx.db.get(args.sourceId);
+    if (source === null) {
+      configError("unknown calendar source");
+    }
+    if (!source.enabled || source.mode !== "convex") {
+      return { started: false, reason: null };
+    }
+    if (source.runningImportId !== undefined) {
+      const active = await ctx.db.get(source.runningImportId);
+      if (
+        active !== null &&
+        (active.state === "running" || active.state === "staging") &&
+        (active.leaseExpiresAt ?? 0) > now &&
+        active.configGeneration === source.configGeneration
+      ) {
+        return { started: false, reason: "running" as const };
+      }
+    }
+    const history = await ctx.db
+      .query("calendarImports")
+      .withIndex("by_source_sequence", (q) => q.eq("sourceId", source._id))
+      .collect();
+    const latest = history.sort((a, b) => b.sequence - a.sequence)[0];
+    if (
+      latest !== undefined &&
+      now - latest.startedAt < MANUAL_REFRESH_THROTTLE_MS
+    ) {
+      return { started: false, reason: "throttled" as const };
+    }
+    await ctx.scheduler.runAfter(0, internal.calendarFetch.fetchCalendar, {
+      sourceId: source._id,
+    });
+    await ctx.db.patch(source._id, {
+      nextAttemptAt: now + source.intervalMs,
+    });
+    return { started: true, reason: null };
   },
 });
 

@@ -32,9 +32,11 @@ import {
   internalQuery,
   type MutationCtx,
 } from "./_generated/server.js";
+import { internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import { contentFingerprint } from "./lib/calendarFingerprint.js";
 import { calendarWindow } from "./lib/calendarPolicy.js";
+import { todayBerlin } from "./lib/dates.js";
 import type { NormalizedCalendarEvent } from "./lib/calendarTypes.js";
 import {
   calendarWindowValidator,
@@ -693,6 +695,73 @@ export const cleanup = internalMutation({
     let remaining = pendingRows > 0;
     remaining ||= eventsCapped;
     return { deleted, remaining };
+  },
+});
+
+// Minute dispatcher (Task 4): schedules every due enabled central source
+// through the fetch action and advances the stored Berlin day. Due means
+// the regular slot arrived (no future nextAttemptAt) and no valid running
+// import exists; scheduling reserves the next slot so the following tick
+// skips the source until the action claims (or fails) and reschedules.
+// Coverage never advances here: only a later fetch publish moves it.
+export const dispatch = internalMutation({
+  args: {},
+  returns: v.object({
+    scheduled: v.array(v.id("calendarSources")),
+    berlinDate: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    void args;
+    const now = Date.now();
+    const berlinDate = todayBerlin(now);
+    const existing = await ctx.db
+      .query("familyBackendSettings")
+      .withIndex("by_key", (q) => q.eq("key", "calendars"))
+      .unique();
+    if (existing === null) {
+      await ctx.db.insert("familyBackendSettings", {
+        key: "calendars",
+        configurationRevision: 0,
+        configured: false,
+        berlinDate,
+        updatedAt: now,
+      });
+    } else if (existing.berlinDate !== berlinDate) {
+      await ctx.db.patch(existing._id, { berlinDate, updatedAt: now });
+    }
+    const sources = await ctx.db.query("calendarSources").collect();
+    const scheduled: Id<"calendarSources">[] = [];
+    for (const source of sources) {
+      if (!source.enabled || source.mode !== "convex") {
+        continue;
+      }
+      if (
+        source.nextAttemptAt !== undefined &&
+        source.nextAttemptAt > now
+      ) {
+        continue;
+      }
+      if (source.runningImportId !== undefined) {
+        const active = await ctx.db.get(source.runningImportId);
+        if (
+          active !== null &&
+          (active.state === "running" || active.state === "staging") &&
+          (active.leaseExpiresAt ?? 0) > now &&
+          active.configGeneration === source.configGeneration
+        ) {
+          continue;
+        }
+      }
+      await ctx.scheduler.runAfter(0, internal.calendarFetch.fetchCalendar, {
+        sourceId: source._id,
+      });
+      await ctx.db.patch(source._id, {
+        nextAttemptAt: now + source.intervalMs,
+      });
+      scheduled.push(source._id);
+    }
+    scheduled.sort();
+    return { scheduled, berlinDate };
   },
 });
 

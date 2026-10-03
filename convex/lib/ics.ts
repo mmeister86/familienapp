@@ -450,9 +450,9 @@ function unescapeText(raw: string): string {
   return raw
     .replaceAll("\\,", ",")
     .replaceAll("\\;", ";")
-    .replaceAll(/\\[nN]/gv, "\n")
+    .replaceAll(/\\[nN]/g, "\n")
     .replaceAll("\\\\", "\\")
-    .replace(/^"(.*)"$/v, "$1");
+    .replace(/^"(.*)"$/, "$1");
 }
 
 // ---------------------------------------------------------------------------
