@@ -23,9 +23,12 @@
 import { createHash } from "node:crypto";
 import { sync as icalSync } from "node-ical";
 import type {
+  CalendarIdentityQuality,
   CalendarWindow,
   NormalizedCalendarEvent,
 } from "./calendarTypes.js";
+import { BERLIN_TIMEZONE } from "./calendarTypes.js";
+import { berlinMidnightMs, occurrenceKey } from "./calendarPolicy.js";
 
 // Hard cap for expanded occurrences per feed. Exceeding it throws instead of
 // truncating so an import can never silently replace last-good data.
@@ -286,21 +289,6 @@ function wallDateInZone(zone: string, ms: number): string {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
 }
 
-function berlinMidnightMs(dateStr: string): number {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  if (match === null) {
-    throw new IcsNormalizeError(`invalid calendar date "${dateStr}"`);
-  }
-  return wallToMs("Europe/Berlin", {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3]),
-    hour: 0,
-    minute: 0,
-    second: 0,
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Raw date/time values
 // ---------------------------------------------------------------------------
@@ -517,8 +505,23 @@ function injectSyntheticUids(text: string, raw: RawCalendar): string {
 // ---------------------------------------------------------------------------
 
 type EffectiveRange =
-  | { allDay: false; startMs: number; endMs: number }
+  | { allDay: false; startMs: number; endMs: number; timezone: string }
   | { allDay: true; startDate: string; endDate: string };
+
+// Source timezone name for a timed value: UTC instants report "UTC", TZID
+// values the resolved IANA name, floating values the source/default zone.
+function zoneOfRaw(value: RawDateTime, floatZone: string): string {
+  if (value.kind === "utc") {
+    return "UTC";
+  }
+  if (value.kind === "floating") {
+    return floatZone;
+  }
+  if (value.kind === "tzid") {
+    return resolveZoneName(value.tzid ?? "");
+  }
+  throw new IcsNormalizeError("unusable DATE value as an instant");
+}
 
 function instantOf(
   value: RawDateTime,
@@ -642,6 +645,7 @@ function effectiveRangeFromProps(
   }
   const parsedStart = asDate(parsed["start"]);
   const startMs = instantOf(start, parsedStart, floatZone, "DTSTART");
+  const timezone = zoneOfRaw(start, floatZone);
   let endMs: number;
   if (dtend !== undefined) {
     const end = parseRawDate(dtend.value, dtend.params);
@@ -659,7 +663,7 @@ function effectiveRangeFromProps(
   if (endMs < startMs) {
     throw new IcsNormalizeError(`${label} ends before it starts`);
   }
-  return { allDay: false, startMs, endMs };
+  return { allDay: false, startMs, endMs, timezone };
 }
 
 // ---------------------------------------------------------------------------
@@ -1047,7 +1051,12 @@ function expandRdates(
             `RDATE period ends before it starts (${uidLabel})`,
           );
         }
-        out.push({ allDay: false, startMs, endMs });
+        out.push({
+          allDay: false,
+          startMs,
+          endMs,
+          timezone: zoneOfRaw(startRaw, floatZone),
+        });
         continue;
       }
       const value = parseRawDate(part, spec.params);
@@ -1068,6 +1077,7 @@ function expandRdates(
         allDay: false,
         startMs,
         endMs: startMs + (base.allDay ? baseDays * DAY_MS : baseDurMs),
+        timezone: zoneOfRaw(value, floatZone),
       });
     }
   }
@@ -1315,6 +1325,8 @@ type PendingInstance = {
   title: string;
   location: string | undefined;
   range: EffectiveRange;
+  // Source timezone name for timed ranges; Berlin for all-day ranges.
+  timezone: string;
   sortKey: number;
 };
 
@@ -1324,8 +1336,8 @@ export function normalizeIcs(
   defaultTimezone: string,
 ): NormalizedCalendarEvent[] {
   const resolvedDefault = resolveZoneName(defaultTimezone);
-  const winStartMs = berlinMidnightMs(window.startDate);
-  const winEndMs = berlinMidnightMs(window.endDate);
+  const winStartMs = window.fromMs;
+  const winEndMs = window.toMs;
   if (winEndMs < winStartMs) {
     throw new IcsNormalizeError("calendar window ends before it starts");
   }
@@ -1507,7 +1519,7 @@ export function normalizeIcs(
   const pending: PendingInstance[] = [];
   const overlaps = (range: EffectiveRange): boolean =>
     range.allDay
-      ? range.startDate < window.endDate && range.endDate > window.startDate
+      ? range.startDate < window.toDate && range.endDate > window.fromDate
       : range.startMs < winEndMs && range.endMs > winStartMs;
   const sortKeyOf = (range: EffectiveRange): number =>
     range.allDay ? Date.parse(`${range.startDate}T00:00:00Z`) : range.startMs;
@@ -1523,12 +1535,20 @@ export function normalizeIcs(
     if (!overlaps(range)) {
       return;
     }
-    const key = JSON.stringify([uid, recId ?? null]);
+    const key = occurrenceKey(uid, recId);
     if (emitted.has(key)) {
       return;
     }
     emitted.add(key);
-    pending.push({ uid, recId, title, location, range, sortKey: sortKeyOf(range) });
+    pending.push({
+      uid,
+      recId,
+      title,
+      location,
+      range,
+      timezone: range.allDay ? BERLIN_TIMEZONE : range.timezone,
+      sortKey: sortKeyOf(range),
+    });
     if (pending.length > MAX_ICS_OCCURRENCES) {
       throw new IcsNormalizeError(
         `feed exceeds the ${MAX_ICS_OCCURRENCES} occurrence limit (no partial success)`,
@@ -1676,8 +1696,8 @@ export function normalizeIcs(
         if (base.allDay) {
           const days = diffDays(base.startDate, base.endDate);
           const pad = days + 2;
-          const fromDate = addDays(window.startDate, -pad);
-          const toDate = addDays(window.endDate, pad);
+          const fromDate = addDays(window.fromDate, -pad);
+          const toDate = addDays(window.toDate, pad);
           const estimate = estimateRruleCount(
             opts,
             Date.parse(`${fromDate}T00:00:00Z`),
@@ -1774,7 +1794,7 @@ export function normalizeIcs(
               applyMember(member);
               continue;
             }
-            if (excludedByExdate({ allDay: false, startMs: occMs, endMs: occMs })) {
+            if (excludedByExdate({ allDay: false, startMs: occMs, endMs: occMs, timezone: seriesZoneOf() })) {
               continue;
             }
             pushInstance(
@@ -1782,7 +1802,12 @@ export function normalizeIcs(
               basicUtc(occMs),
               baseTitle,
               baseLoc,
-              { allDay: false, startMs: occMs, endMs: occMs + durMs },
+              {
+                allDay: false,
+                startMs: occMs,
+                endMs: occMs + durMs,
+                timezone: seriesZoneOf(),
+              },
               emitted,
             );
           }
@@ -1856,29 +1881,45 @@ export function normalizeIcs(
   });
 
   return pending.map((item): NormalizedCalendarEvent => {
+    const identityQuality: CalendarIdentityQuality = item.uid.startsWith(
+      "fallback:",
+    )
+      ? "fallback"
+      : "provider";
+    // The internal series zone uses "Etc/UTC"; the contract reports UTC
+    // instants as "UTC".
+    const timezone = item.timezone === "Etc/UTC" ? "UTC" : item.timezone;
+    const location =
+      item.location !== undefined && item.location !== ""
+        ? { location: item.location }
+        : {};
     if (item.range.allDay) {
       return {
+        key: occurrenceKey(item.uid, item.recId),
         uid: item.uid,
+        identityQuality,
         recurrenceId: item.recId,
         title: item.title,
-        start: item.range.startDate,
-        end: item.range.endDate,
+        ...location,
+        startMs: berlinMidnightMs(item.range.startDate),
+        endMs: berlinMidnightMs(item.range.endDate),
         allDay: true,
-        ...(item.location !== undefined && item.location !== ""
-          ? { location: item.location }
-          : {}),
+        timezone,
+        startDate: item.range.startDate,
+        endDate: item.range.endDate,
       };
     }
     return {
+      key: occurrenceKey(item.uid, item.recId),
       uid: item.uid,
+      identityQuality,
       recurrenceId: item.recId,
       title: item.title,
-      start: new Date(item.range.startMs).toISOString(),
-      end: new Date(item.range.endMs).toISOString(),
+      ...location,
+      startMs: item.range.startMs,
+      endMs: item.range.endMs,
       allDay: false,
-      ...(item.location !== undefined && item.location !== ""
-        ? { location: item.location }
-        : {}),
+      timezone,
     };
   });
 }
