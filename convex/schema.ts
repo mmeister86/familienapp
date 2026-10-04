@@ -164,4 +164,121 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_endpoint", ["endpoint"]),
+
+  // Explicit calendar source registry (Task 1 of the calendar pilot).
+  // sourceKey is the stable identity: renames and reorders keep the same
+  // document (array position is never identity). New sources start disabled
+  // in shadow mode; configGeneration revokes in-flight commit permission on
+  // every config/mode change. Feeds are referenced by urlEnvKey only — no
+  // secrets in this table; credentials stay in server-side Convex/Coolify
+  // configuration. At most MAX_CALENDAR_SOURCES (20) documents.
+  calendarSources: defineTable({
+    sourceKey: v.string(),
+    name: v.string(),
+    color: v.string(),
+    panel: v.union(v.literal("column"), v.literal("school")),
+    order: v.number(),
+    intoCalendarId: v.optional(v.id("calendarSources")),
+    personIds: v.array(v.id("users")),
+    urlEnvKey: v.string(),
+    enabled: v.boolean(),
+    mode: v.union(
+      v.literal("shadow"),
+      v.literal("convex"),
+      v.literal("local"),
+    ),
+    intervalMs: v.number(),
+    configGeneration: v.number(),
+    nextAttemptAt: v.optional(v.number()),
+    runningImportId: v.optional(v.id("calendarImports")),
+    leaseExpiresAt: v.optional(v.number()),
+    publishedImportId: v.optional(v.id("calendarImports")),
+    publishedDataImportId: v.optional(v.id("calendarImports")),
+  })
+    .index("by_sourceKey", ["sourceKey"])
+    .index("by_enabled_mode_nextAttempt", [
+      "enabled",
+      "mode",
+      "nextAttemptAt",
+    ]),
+
+  // One row per import execution. configGeneration pins the source's
+  // configGeneration at start; the commit (later task) only accepts
+  // configGeneration === current generation, so config/mode changes revoke
+  // in-flight runs. Only a "ready" import covering the declared window
+  // counts as a successful current stand for its range. No URLs or tokens.
+  calendarImports: defineTable({
+    sourceId: v.id("calendarSources"),
+    sequence: v.number(),
+    configGeneration: v.number(),
+    state: v.union(
+      v.literal("running"),
+      v.literal("staging"),
+      v.literal("ready"),
+      v.literal("error"),
+      v.literal("superseded"),
+    ),
+    fromDate: v.string(), // YYYY-MM-DD Berlin, inclusive
+    toDate: v.string(), // YYYY-MM-DD Berlin, exclusive
+    startedAt: v.number(),
+    leaseExpiresAt: v.optional(v.number()),
+    successAt: v.optional(v.number()),
+    eventCount: v.optional(v.number()),
+    batchCount: v.optional(v.number()),
+    batchTotal: v.optional(v.number()),
+    contentFingerprint: v.optional(v.string()),
+    error: v.optional(v.string()), // sanitized, safe for parent UI
+  })
+    .index("by_source_sequence", ["sourceId", "sequence"])
+    .index("by_state_lease", ["state", "leaseExpiresAt"]),
+
+  // Normalized calendar events, stored per source. key is
+  // occurrenceKey(uid, recurrenceId); the same UID in different calendars
+  // stays distinct via the leading sourceId (no global uniqueness).
+  // importId points at the import run that staged the event.
+  calendarEvents: defineTable({
+    sourceId: v.id("calendarSources"),
+    importId: v.id("calendarImports"),
+    key: v.string(),
+    uid: v.string(),
+    recurrenceId: v.optional(v.string()),
+    identityQuality: v.union(
+      v.literal("provider"),
+      v.literal("fallback"),
+    ),
+    title: v.string(),
+    location: v.optional(v.string()),
+    startMs: v.number(),
+    endMs: v.number(),
+    allDay: v.boolean(),
+    timezone: v.string(),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+  })
+    .index("by_source_import_key", ["sourceId", "importId", "key"])
+    .index("by_import_start", ["importId", "startMs"]),
+
+  // Explicit person/source bindings (no first-name guessing). The pair
+  // (kind, externalId) is unique: ambiguous mappings surface as
+  // configuration errors instead of auto-linking.
+  personSourceBindings: defineTable({
+    userId: v.id("users"),
+    kind: v.union(v.literal("besteschule"), v.literal("timetable")),
+    externalId: v.string(),
+  })
+    .index("by_kind_externalId", ["kind", "externalId"])
+    .index("by_user", ["userId"]),
+
+  // Single-family backend settings. Key "calendars" carries the global
+  // configuration revision (served as CalendarFeedV1.configurationRevision),
+  // the explicit setup flag (missing doc or configured=false means not set
+  // up; a deliberately empty configuration has configured=true) and the
+  // central Berlin day advanced by the dispatcher.
+  familyBackendSettings: defineTable({
+    key: v.string(),
+    configurationRevision: v.number(),
+    configured: v.boolean(),
+    berlinDate: v.string(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });

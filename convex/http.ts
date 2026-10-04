@@ -14,7 +14,7 @@ const http = httpRouter();
 function unauthorized(): Response {
   return new Response("Unauthorized", {
     status: 401,
-    headers: { "WWW-Authenticate": "Bearer" },
+    headers: { "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" },
   });
 }
 
@@ -37,6 +37,27 @@ function isDashboardAuthorized(request: Request): boolean {
     request.headers.get("Authorization"),
     process.env.DASHBOARD_TOKEN,
   );
+}
+
+// Calendar device gate for GET /dashboard/calendars. This is a dedicated
+// read-only secret: neither DASHBOARD_TOKEN nor INGEST_TOKEN authorizes the
+// calendar feed, and the calendar token authorizes no ingest route.
+function isCalendarAuthorized(request: Request): boolean {
+  return isAuthorizedHeader(
+    request.headers.get("Authorization"),
+    process.env.CALENDAR_DASHBOARD_TOKEN,
+  );
+}
+
+// The whole HTTP feed envelope must stay within this bound; larger stands
+// answer 503 and the Go cache keeps serving last-good (Task 5).
+const MAX_CALENDAR_FEED_BYTES = 4 * 1024 * 1024;
+
+function calendarUnavailable(message: string): Response {
+  return new Response(message, {
+    status: 503,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 http.route({
@@ -144,6 +165,41 @@ http.route({
       console.error("familyapp: todos request failed", error);
       return new Response("Internal error", { status: 500 });
     }
+  }),
+});
+
+http.route({
+  path: "/dashboard/calendars",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!isCalendarAuthorized(request)) {
+      return unauthorized();
+    }
+    let feed: unknown;
+    try {
+      feed = await ctx.runQuery(internal.calendar.getDashboardFeed, {});
+    } catch (error) {
+      if (
+        error instanceof ConvexError &&
+        typeof error.data === "string" &&
+        error.data.startsWith("CalendarNotConfigured")
+      ) {
+        return calendarUnavailable("Calendar feed not configured");
+      }
+      console.error("familyapp: calendar feed request failed", error);
+      return new Response("Internal error", { status: 500 });
+    }
+    const body = JSON.stringify(feed);
+    if (new TextEncoder().encode(body).length > MAX_CALENDAR_FEED_BYTES) {
+      return calendarUnavailable("Calendar feed too large");
+    }
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    });
   }),
 });
 

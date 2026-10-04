@@ -90,6 +90,14 @@ crons.interval(
   { hours: 24 },
   internal.ingest.cleanupBriefings,
 );
+// Central calendar dispatcher (Task 4): every minute, schedule due enabled
+// mode=convex sources and advance the stored Berlin day. The action claims
+// the per-source commit permission; this tick only schedules.
+crons.interval(
+  "calendar central dispatch",
+  { minutes: 1 },
+  internal.calendarSync.dispatch,
+);
 // Parents' AI briefing: checks every hour, runs at AUTO_RUN_HOURS (Berlin,
 // DST-safe because the hour is evaluated in Europe/Berlin), prunes old rows.
 crons.hourly(

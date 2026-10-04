@@ -4,6 +4,10 @@ Familien-Organisation (Aufgaben, Punkte, Belohnungen) als installierbare PWA mit
 selbst gehostetem Convex-Backend. Maßgeblich für Scope, Datenmodell und Phasen ist
 [`.docs/PLAN.md`](.docs/PLAN.md); das bindende Schnittstellen-Contract für Backend
 und Wall-Dashboard ist [`.docs/FAMILY_APP.md`](.docs/FAMILY_APP.md).
+Seit dem Kalender-Pilot importiert das Backend außerdem die Familienkalender
+zentral (ICS → normalisierte Ereignisse → `GET /dashboard/calendars` fürs
+Wall-Dashboard); Rollout-Reihenfolge, Tokens und Rollback stehen im Dashboard-Repo
+(`docs/CONVEX_CALENDAR_ROLLOUT.md`).
 
 ## Voraussetzungen
 
@@ -55,6 +59,14 @@ pnpm lint
 pnpm build
 npx convex dev --once
 ```
+
+`npx convex dev --once` läuft ausschließlich gegen das lokale Backend
+(`CONVEX_*`-Ziele mit Produktionsbezug vorher entfernen, keine produktive
+`.env.local` kopieren). Die Kalender-`use node`-Actions brauchen lokal
+Node.js 20, 22 oder 24 — mit anderen Versionen (z. B. 26) schlägt der Sync
+mit `DeploymentNotConfiguredForNodeActions` fehl; dann ist das kein
+Code-Fehler, sondern eine Toolchain-Lücke, die vor dem produktiven
+Schalten zu schließen ist.
 
 `pnpm build` erzeugt zusätzlich den Service Worker (`dist/sw.js`), das Manifest
 (`dist/manifest.webmanifest`) sowie die PWA-Icons. Falls sich die Platzhalter-Icons
@@ -110,6 +122,13 @@ docker run --rm -p 8080:80 familienapp
 - Das Dashboard-Domain schützen (Coolify Basic Auth oder nur via VPN erreichbar).
 - Prod-Env-Variablen in Convex setzen (via `npx convex env set`):
   `PIN_*` (PINs der Familienmitglieder), `DASHBOARD_TOKEN`, `INGEST_TOKEN`,
+  plus für den Kalender-Pilot: `CALENDAR_DASHBOARD_TOKEN` (einzige Berechtigung
+  für `GET /dashboard/calendars`, sonst nichts) und pro Quelle die
+  Server-Adresse unter ihrem `urlEnvKey` (z. B. `FAMILY_CALENDAR_URL`,
+  `SCHOOL_CALENDAR_URL`) — echte Werte nur auf der Kommandozeile, nie in Dateien.
+  Quellen starten immer deaktiviert (`shadow`) und werden erst nach Vergleich
+  per `calendarSources.activate` auf `convex` geschaltet
+  (Rollout im Dashboard-Repo: `docs/CONVEX_CALENDAR_ROLLOUT.md`),
   plus für Web Push: `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` (Schlüsselpaar
   einmalig generieren mit `pnpm dlx web-push generate-vapid-keys`; lokal und
   in Prod dürfen verschiedene Paare verwendet werden) und optional
