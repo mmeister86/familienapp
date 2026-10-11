@@ -378,6 +378,14 @@ describe("default scenes seed data", () => {
       }
     }
   });
+
+  it("fills all 24 grid rows", () => {
+    for (const scene of DEFAULT_SCENES) {
+      if (scene.kind !== "layout") continue;
+      const bottom = Math.max(...scene.widgets.map((w) => w.y + w.h));
+      expect(bottom).toBe(24);
+    }
+  });
 });
 
 describe("dashboard scenes v1 contract fixture", () => {
