@@ -1,7 +1,8 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { useSession } from "@/hooks/useSession"
+import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { DayKind } from "@/lib/scene-schedule"
@@ -10,7 +11,10 @@ import {
   defaultPropsFor,
 } from "@/lib/scene-layout"
 import type { Layout } from "react-grid-layout/legacy"
-import type { SceneStart } from "../../convex/lib/validators"
+import type {
+  SceneStart,
+  SceneWidget,
+} from "../../convex/lib/validators"
 import { SceneCanvas } from "@/components/layouts/scene-canvas"
 import { SceneHeader } from "@/components/layouts/scene-header"
 import { SceneTabs } from "@/components/layouts/scene-tabs"
@@ -35,7 +39,16 @@ export function LayoutsPage() {
   const setNightStart = useMutation(api.dashboardScenes.setNightStart)
   const [explicitId, setExplicitId] = useState<string | null>(null)
   const [nightError, setNightError] = useState<string | null>(null)
+  const [nightUndo, setNightUndo] = useState<SceneStart | null>(null)
   const draggedType = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!nightUndo) {
+      return
+    }
+    const timer = window.setTimeout(() => setNightUndo(null), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [nightUndo])
 
   const scenes = data?.scenes
   const selectedId =
@@ -84,7 +97,10 @@ export function LayoutsPage() {
       }
       const start: SceneStart = { ...scene.published.start, [day]: value }
       setNightStart({ token, start }).then(
-        () => setNightError(null),
+        (old) => {
+          setNightError(null)
+          setNightUndo(old)
+        },
         (e: unknown) =>
           setNightError(
             e instanceof Error ? e.message : "Speichern fehlgeschlagen",
@@ -96,6 +112,22 @@ export function LayoutsPage() {
       return
     }
     updateForm({ start: { ...form.start, [day]: value } })
+  }
+
+  const handleNightUndo = (): void => {
+    if (!token || !nightUndo) {
+      return
+    }
+    setNightStart({ token, start: nightUndo }).then(
+      () => {
+        setNightUndo(null)
+        setNightError(null)
+      },
+      (e: unknown) =>
+        setNightError(
+          e instanceof Error ? e.message : "Speichern fehlgeschlagen",
+        ),
+    )
   }
 
   const handleLayoutChange = (layout: Layout): void => {
@@ -122,6 +154,34 @@ export function LayoutsPage() {
         { id, type, x, y, w, h, props: defaultPropsFor(type) },
       ],
     })
+  }
+
+  const handleUpdateWidget = (
+    id: string,
+    patch: Partial<SceneWidget>,
+  ): void => {
+    if (!form) {
+      return
+    }
+    updateForm({
+      widgets: form.widgets.map((widget) => {
+        if (widget.id !== id) {
+          return widget
+        }
+        const next = { ...widget, ...patch }
+        if (next.fallback === undefined) {
+          delete next.fallback
+        }
+        return next
+      }),
+    })
+  }
+
+  const handleRemoveWidget = (id: string): void => {
+    if (!form) {
+      return
+    }
+    updateForm({ widgets: form.widgets.filter((widget) => widget.id !== id) })
   }
 
   const barScenes = scenes.flatMap((entry) => {
@@ -172,7 +232,21 @@ export function LayoutsPage() {
         error={nightError}
       />
       {scene.kind === "night" ? (
-        <p className="text-sm text-muted-foreground">Nacht-Vorschau folgt.</p>
+        <div className="max-w-[600px] space-y-3 rounded-xl border border-border bg-card p-6">
+          <div className="text-sm font-medium">Nacht-Ansicht</div>
+          <p className="text-sm text-muted-foreground">
+            Uhr, Wetter, Hintergrundbild — die Ansicht selbst lässt sich nicht
+            umbauen. Zeitänderungen gelten sofort.
+          </p>
+          {nightUndo !== null && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm">Zeiten geändert.</span>
+              <Button variant="outline" size="sm" onClick={handleNightUndo}>
+                Rückgängig
+              </Button>
+            </div>
+          )}
+        </div>
       ) : (
         form !== null && (
           <div className="flex gap-6">
@@ -190,6 +264,8 @@ export function LayoutsPage() {
                 draggedTypeRef={draggedType}
                 onLayoutChange={handleLayoutChange}
                 onDropWidget={handleDropWidget}
+                onUpdateWidget={handleUpdateWidget}
+                onRemoveWidget={handleRemoveWidget}
               />
             </div>
           </div>

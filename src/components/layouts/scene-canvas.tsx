@@ -1,4 +1,5 @@
 import { useMemo, type RefObject } from "react"
+import { Repeat } from "lucide-react"
 import GridLayout, {
   type Layout,
 } from "react-grid-layout/legacy"
@@ -10,6 +11,7 @@ import {
   type CatalogEntry,
 } from "@/lib/scene-layout"
 import { widgetIcon } from "./widget-icons"
+import { TileSettings } from "./tile-settings"
 
 const COLS = 12
 const MAX_ROWS = 24
@@ -21,6 +23,8 @@ export function SceneCanvas({
   draggedTypeRef,
   onLayoutChange,
   onDropWidget,
+  onUpdateWidget,
+  onRemoveWidget,
 }: {
   widgets: SceneWidget[]
   catalog: readonly CatalogEntry[]
@@ -33,6 +37,8 @@ export function SceneCanvas({
     w: number,
     h: number,
   ) => void
+  onUpdateWidget: (id: string, patch: Partial<SceneWidget>) => void
+  onRemoveWidget: (id: string) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
   const layout = useMemo(
@@ -61,6 +67,7 @@ export function SceneCanvas({
           preventCollision
           isBounded
           isDroppable
+          draggableCancel=".tile-gear"
           resizeHandles={["se"]}
           onLayoutChange={onLayoutChange}
           onDropDragOver={() => {
@@ -85,21 +92,41 @@ export function SceneCanvas({
             const name =
               catalog.find((entry) => entry.type === widget.type)?.name ??
               widget.type
+            const fallbackName =
+              widget.fallback === undefined
+                ? null
+                : (catalog.find((entry) => entry.type === widget.fallback)
+                    ?.name ?? widget.fallback)
             return (
               <div
                 key={widget.id}
-                className="rounded-xl border border-border bg-card p-3"
+                className="relative rounded-xl border border-border bg-card p-3"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pr-6">
                   <Icon
                     className="size-4 shrink-0 text-primary"
                     aria-hidden="true"
                   />
                   <span className="truncate text-sm font-medium">{name}</span>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground tabular-nums">
+                <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
                   {widget.w} × {widget.h}
+                  {fallbackName !== null && (
+                    <span title={`Fallback: ${fallbackName}`}>
+                      <Repeat
+                        className="size-3.5"
+                        aria-label={`Fallback: ${fallbackName}`}
+                      />
+                    </span>
+                  )}
                 </div>
+                <TileSettings
+                  widget={widget}
+                  displayName={name}
+                  catalog={catalog}
+                  onUpdate={onUpdateWidget}
+                  onRemove={onRemoveWidget}
+                />
               </div>
             )
           })}
