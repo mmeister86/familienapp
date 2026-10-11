@@ -454,8 +454,18 @@ export const deleteScene = mutation({
     for (const version of versions) {
       await ctx.db.delete(version._id);
     }
+    // A deleted scene takes its preview with it, so the wall drops it at once.
+    const previews = await ctx.db.query("dashboardPreview").collect();
+    for (const preview of previews) {
+      if (preview.sceneId === scene.sceneId) {
+        await ctx.db.delete(preview._id);
+      }
+    }
     await ctx.db.delete(scene._id);
-    await bumpRevision(ctx);
+    // Only published stands reach the wall: deleting a bare draft is silent.
+    if (scene.published !== null) {
+      await bumpRevision(ctx);
+    }
     return null;
   },
 });
@@ -696,6 +706,20 @@ export const seedDefaultScenes = internalMutation({
       });
       return { seeded, skipped, revision: 1 };
     }
-    return { seeded, skipped, revision: settings.configurationRevision };
+    if (seeded.length === 0 && settings.configured) {
+      return { seeded, skipped, revision: settings.configurationRevision };
+    }
+    // Reseeding after deletes changes the feed, so revision-keyed consumers
+    // must see a bump; a stray unconfigured flag is repaired along the way.
+    const revision =
+      seeded.length > 0
+        ? settings.configurationRevision + 1
+        : settings.configurationRevision;
+    await ctx.db.patch(settings._id, {
+      configurationRevision: revision,
+      configured: true,
+      updatedAt: now,
+    });
+    return { seeded, skipped, revision };
   },
 });

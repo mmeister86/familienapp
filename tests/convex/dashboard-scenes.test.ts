@@ -625,6 +625,35 @@ describe("deleteScene", () => {
       }),
     ).rejects.toThrow(/muss .* laufen/);
   });
+
+  it("deletes an unpublished scene without bumping and drops its preview", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertLayout(t);
+    await insertSettings(t, 3);
+
+    const sceneId = await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Vorschau",
+      start: start({ schoolDay: "15:30", weekend: null }),
+    });
+    await t.mutation(api.dashboardScenes.sendPreview, {
+      token: parent.token,
+      sceneId,
+    });
+    await t.mutation(api.dashboardScenes.deleteScene, {
+      token: parent.token,
+      sceneId,
+    });
+
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    expect(listed.revision).toBe(3);
+    const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
+    expect(feed.preview).toBeUndefined();
+  });
 });
 
 describe("sendPreview", () => {
@@ -838,7 +867,7 @@ describe("seedDefaultScenes", () => {
     expect(morning?.widgets).toHaveLength(5);
   });
 
-  it("skips existing scenes and keeps their content and revision", async () => {
+  it("skips existing scenes, keeps their content, bumps for added scenes", async () => {
     const t = setupCalendarTest();
     await insertLayout(t, { name: "Umgebaut" });
     await insertSettings(t, 5);
@@ -854,14 +883,49 @@ describe("seedDefaultScenes", () => {
       "night",
     ]);
     expect(result.skipped).toEqual(["morning"]);
-    expect(result.revision).toBe(5);
+    expect(result.revision).toBe(6);
 
     const parent = await createParentSession(t);
     const listed = await t.query(api.dashboardScenes.list, {
       token: parent.token,
     });
-    expect(listed.revision).toBe(5);
+    expect(listed.revision).toBe(6);
     const morning = listed.scenes.find((s) => s.sceneId === "morning");
     expect(morning?.published?.name).toBe("Umgebaut");
+  });
+
+  it("leaves the revision alone when everything is already seeded", async () => {
+    const t = setupCalendarTest();
+    await t.mutation(internal.dashboardScenes.seedDefaultScenes, {});
+
+    const result = await t.mutation(
+      internal.dashboardScenes.seedDefaultScenes,
+      {},
+    );
+    expect(result.seeded).toEqual([]);
+    expect(result.skipped).toHaveLength(5);
+    expect(result.revision).toBe(1);
+  });
+
+  it("repairs unconfigured settings without bumping", async () => {
+    const t = setupCalendarTest();
+    await t.mutation(internal.dashboardScenes.seedDefaultScenes, {});
+    await t.run(async (ctx) => {
+      const settings = await ctx.db
+        .query("familyBackendSettings")
+        .withIndex("by_key", (q) => q.eq("key", "scenes"))
+        .unique();
+      await ctx.db.patch(settings!._id, { configured: false });
+    });
+
+    const result = await t.mutation(
+      internal.dashboardScenes.seedDefaultScenes,
+      {},
+    );
+    expect(result.seeded).toEqual([]);
+    expect(result.revision).toBe(1);
+
+    const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
+    expect(feed.scenes).toHaveLength(5);
   });
 });
