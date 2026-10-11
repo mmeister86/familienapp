@@ -15,10 +15,17 @@ import {
   assertValidStart,
   assertValidWidgets,
 } from "../../convex/lib/scenes.js";
-import type {
-  SceneStart,
-  SceneWidget,
+import {
+  scenesFeedValidator,
+  type SceneStart,
+  type SceneWidget,
+  type ScenesFeed,
 } from "../../convex/lib/validators.js";
+import {
+  assertMatchesValidator,
+  loadJsonFixture,
+  type ValidatorJson,
+} from "./validatorFixture.js";
 
 function widget(overrides: Partial<SceneWidget> = {}): SceneWidget {
   return {
@@ -359,6 +366,50 @@ describe("default scenes seed data", () => {
     }
     assertDayTypesCovered(
       DEFAULT_SCENES.map((s) => ({ kind: s.kind, start: s.start })),
+    );
+  });
+});
+
+describe("dashboard scenes v1 contract fixture", () => {
+  function loadFeed(): ScenesFeed {
+    return loadJsonFixture("dashboard-scenes-v1.json") as unknown as ScenesFeed;
+  }
+
+  it("matches the real validator (fixture parses against scenesFeedValidator)", () => {
+    assertMatchesValidator(
+      scenesFeedValidator.json as unknown as ValidatorJson,
+      loadJsonFixture("dashboard-scenes-v1.json"),
+      "feed",
+    );
+  });
+
+  it("has the versioned envelope (same keys the live feed serves)", () => {
+    const feed = loadJsonFixture("dashboard-scenes-v1.json");
+    expect(Object.keys(feed).sort()).toEqual(
+      ["grid", "preview", "revision", "scenes", "version"].sort(),
+    );
+    expect(feed["version"]).toBe(1);
+    expect(feed["grid"]).toEqual({ cols: 12, rows: 24 });
+    expect(typeof feed["revision"]).toBe("number");
+  });
+
+  it("holds valid scenes (names, starts, widgets, conflict-free schedule)", () => {
+    const feed = loadFeed();
+    for (const scene of feed.scenes) {
+      assertValidSceneName(scene.name);
+      assertValidStart(scene.start);
+      assertValidWidgets(scene.widgets ?? []);
+    }
+    const published = feed.scenes.map((scene) => ({
+      sceneId: scene.id,
+      name: scene.name,
+      start: scene.start,
+    }));
+    for (const candidate of published) {
+      assertScheduleCompatible(candidate, published);
+    }
+    assertDayTypesCovered(
+      feed.scenes.map((scene) => ({ kind: scene.kind, start: scene.start })),
     );
   });
 });

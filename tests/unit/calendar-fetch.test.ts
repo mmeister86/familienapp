@@ -30,6 +30,11 @@ import {
 } from "../../convex/lib/calendarFetch.js";
 import { contentFingerprint } from "../../convex/lib/calendarFingerprint.js";
 import { calendarFeedV1Validator } from "../../convex/lib/calendarValidators.js";
+import {
+  assertMatchesValidator,
+  loadJsonFixture,
+  type ValidatorJson,
+} from "./validatorFixture.js";
 
 const SECRET_URL = "https://cal.example.com/feed.ics?token=secret123";
 
@@ -551,126 +556,16 @@ describe("runFetchCycle", () => {
 });
 
 describe("calendar feed v1 contract fixture", () => {
-  function loadFeed(): Record<string, unknown> {
-    return JSON.parse(
-      readFileSync(
-        new URL("../fixtures/calendar-feed-v1.json", import.meta.url),
-        "utf8",
-      ),
-    ) as Record<string, unknown>;
-  }
-
-  // Recursive check of a plain JSON value against the serializable form of
-  // a real Convex validator (validator.json), so the fixture and
-  // calendarFeedV1Validator cannot drift apart unnoticed.
-  type ValidatorJson = {
-    type: string;
-    value?: unknown;
-    fieldType?: ValidatorJson;
-    optional?: boolean;
-  };
-  function assertMatchesValidator(
-    schema: ValidatorJson,
-    value: unknown,
-    path: string,
-  ): void {
-    const at = (detail: string) => `${path}: ${detail}`;
-    switch (schema.type) {
-      case "any":
-        return;
-      case "string":
-      case "id":
-        expect(typeof value, at(`expected string, got ${typeof value}`)).toBe(
-          "string",
-        );
-        return;
-      case "number":
-      case "float64":
-      case "int64":
-        expect(typeof value, at(`expected number, got ${typeof value}`)).toBe(
-          "number",
-        );
-        return;
-      case "boolean":
-        expect(typeof value, at(`expected boolean, got ${typeof value}`)).toBe(
-          "boolean",
-        );
-        return;
-      case "null":
-        expect(value, at("expected null")).toBeNull();
-        return;
-      case "literal":
-        expect(value, at(`expected literal ${String(schema.value)}`)).toBe(
-          schema.value,
-        );
-        return;
-      case "array": {
-        expect(Array.isArray(value), at("expected array")).toBe(true);
-        for (const [index, item] of (value as unknown[]).entries()) {
-          assertMatchesValidator(
-            schema.value as ValidatorJson,
-            item,
-            `${path}[${String(index)}]`,
-          );
-        }
-        return;
-      }
-      case "object": {
-        expect(
-          typeof value === "object" && value !== null && !Array.isArray(value),
-          at("expected object"),
-        ).toBe(true);
-        const fields = schema.value as Record<
-          string,
-          { fieldType: ValidatorJson; optional: boolean }
-        >;
-        const record = value as Record<string, unknown>;
-        for (const [key, field] of Object.entries(fields)) {
-          if (!(key in record)) {
-            expect(
-              field.optional,
-              at(`missing required field "${key}"`),
-            ).toBe(true);
-            continue;
-          }
-          assertMatchesValidator(field.fieldType, record[key], `${path}.${key}`);
-        }
-        for (const key of Object.keys(record)) {
-          expect(
-            key in fields,
-            at(`unexpected field "${key}" not in the validator`),
-          ).toBe(true);
-        }
-        return;
-      }
-      case "union": {
-        const members = schema.value as ValidatorJson[];
-        const matched = members.some((member) => {
-          try {
-            assertMatchesValidator(member, value, path);
-            return true;
-          } catch {
-            return false;
-          }
-        });
-        expect(matched, at("matched no union member")).toBe(true);
-        return;
-      }
-      default:
-        throw new Error(`unsupported validator kind "${schema.type}" at ${path}`);
-    }
-  }
-
   it("matchesTheRealValidator (fixture parses against calendarFeedV1Validator)", () => {
     assertMatchesValidator(
       calendarFeedV1Validator.json as unknown as ValidatorJson,
-      loadFeed(),
+      loadJsonFixture("calendar-feed-v1.json"),
       "feed",
     );
   });
 
   it("hasTheVersionedEnvelope (same keys the live feed serves)", () => {
-    const feed = loadFeed();
+    const feed = loadJsonFixture("calendar-feed-v1.json");
     expect(Object.keys(feed).sort()).toEqual(
       [
         "bindings",
@@ -693,7 +588,7 @@ describe("calendar feed v1 contract fixture", () => {
   });
 
   it("windowCovers42BerlinDays (checked against the real policy)", () => {
-    const feed = loadFeed();
+    const feed = loadJsonFixture("calendar-feed-v1.json");
     const window = feed["window"] as CalendarWindow;
     expect(addDays(window.fromDate, 42)).toBe(window.toDate);
     expect(window.fromMs).toBe(berlinMidnightMs(window.fromDate));
@@ -701,7 +596,7 @@ describe("calendar feed v1 contract fixture", () => {
   });
 
   it("calendarsAreSortedAndReferentiallyIntact", () => {
-    const feed = loadFeed();
+    const feed = loadJsonFixture("calendar-feed-v1.json");
     const calendars = feed["calendars"] as Array<Record<string, unknown>>;
     const people = feed["people"] as Array<Record<string, unknown>>;
     const personIds = new Set(people.map((person) => person["id"]));
@@ -739,7 +634,7 @@ describe("calendar feed v1 contract fixture", () => {
   });
 
   it("containsNoSecrets", () => {
-    const feed = loadFeed();
+    const feed = loadJsonFixture("calendar-feed-v1.json");
     const serialized = JSON.stringify(feed);
     for (const forbidden of [
       "http",
