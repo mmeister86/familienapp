@@ -423,6 +423,13 @@ export const discardDraft = mutation({
     const caller = await requireParent(ctx, args.token);
     const scene = await getSceneOrThrow(ctx, args.sceneId);
     if (scene.published === null) {
+      // Same as deleteScene: a deleted scene takes its preview with it.
+      const previews = await ctx.db.query("dashboardPreview").collect();
+      for (const preview of previews) {
+        if (preview.sceneId === scene.sceneId) {
+          await ctx.db.delete(preview._id);
+        }
+      }
       await ctx.db.delete(scene._id);
       return { deleted: true };
     }
@@ -444,7 +451,11 @@ export const deleteScene = mutation({
       throw new ConvexError("Die Nacht-Szene lässt sich nicht löschen.");
     }
     const scenes = await ctx.db.query("dashboardScenes").collect();
-    assertDayTypesCovered(publishedCoverage(scenes, scene.sceneId));
+    // A bare draft contributes no published coverage, so deleting one must
+    // never fail on the remaining stands.
+    if (scene.published !== null) {
+      assertDayTypesCovered(publishedCoverage(scenes, scene.sceneId));
+    }
     const versions = await ctx.db
       .query("dashboardSceneVersions")
       .withIndex("by_scene_publishedAt", (q) =>
@@ -519,6 +530,14 @@ export const restoreVersion = mutation({
     if (version === null || version.sceneId !== scene.sceneId) {
       throw new ConvexError("Diese Version gibt es nicht.");
     }
+    // The old name may belong to another scene by now; restoring it as a
+    // draft would strand both scenes on the uniqueness check.
+    const scenes = await ctx.db.query("dashboardScenes").collect();
+    assertUniqueSceneName(
+      version.snapshot.name,
+      scene.sceneId,
+      otherNames(scenes, scene.sceneId),
+    );
     await ctx.db.patch(scene._id, {
       draft: version.snapshot,
       updatedBy: caller._id,
@@ -542,6 +561,12 @@ export const resetToDefault = mutation({
         "Nur die mitgelieferten Szenen lassen sich zurücksetzen.",
       );
     }
+    const scenes = await ctx.db.query("dashboardScenes").collect();
+    assertUniqueSceneName(
+      defaults.name,
+      scene.sceneId,
+      otherNames(scenes, scene.sceneId),
+    );
     await ctx.db.patch(scene._id, {
       draft: {
         name: defaults.name,
@@ -667,11 +692,64 @@ export const seedDefaultScenes = internalMutation({
   }),
   handler: async (ctx) => {
     const now = Date.now();
-    const existing = new Set(
-      (await ctx.db.query("dashboardScenes").collect()).map(
-        (scene) => scene.sceneId,
-      ),
+    const scenes = await ctx.db.query("dashboardScenes").collect();
+    const existing = new Set(scenes.map((scene) => scene.sceneId));
+    const missing = DEFAULT_SCENES.filter(
+      (defaults) => !existing.has(defaults.sceneId),
     );
+    // A reseed after deletes must not break what parents changed: validate
+    // the combined configuration before inserting anything.
+    let layoutCount = scenes.filter(
+      (scene) => scene.kind === "layout",
+    ).length;
+    const names: { sceneId: string; name: string }[] = scenes.flatMap(
+      (scene) => {
+        const entries: { sceneId: string; name: string }[] = [];
+        if (scene.draft !== null) {
+          entries.push({ sceneId: scene.sceneId, name: scene.draft.name });
+        }
+        if (scene.published !== null) {
+          entries.push({ sceneId: scene.sceneId, name: scene.published.name });
+        }
+        return entries;
+      },
+    );
+    const schedule: SceneScheduleEntry[] = scenes.flatMap((scene) =>
+      scene.published === null
+        ? []
+        : [
+            {
+              sceneId: scene.sceneId,
+              name: scene.published.name,
+              start: scene.published.start,
+            },
+          ],
+    );
+    for (const defaults of missing) {
+      if (defaults.kind === "layout") {
+        if (layoutCount >= MAX_LAYOUT_SCENES) {
+          throw new ConvexError(
+            `Höchstens ${MAX_LAYOUT_SCENES} Szenen lassen sich anlegen (ohne Nacht).`,
+          );
+        }
+        layoutCount += 1;
+      }
+      assertUniqueSceneName(defaults.name, defaults.sceneId, names);
+      names.push({ sceneId: defaults.sceneId, name: defaults.name });
+      assertScheduleCompatible(
+        {
+          sceneId: defaults.sceneId,
+          name: defaults.name,
+          start: defaults.start,
+        },
+        schedule,
+      );
+      schedule.push({
+        sceneId: defaults.sceneId,
+        name: defaults.name,
+        start: defaults.start,
+      });
+    }
     const seeded: string[] = [];
     const skipped: string[] = [];
     for (const defaults of DEFAULT_SCENES) {

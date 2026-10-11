@@ -261,6 +261,17 @@ describe("assertValidWidgets", () => {
       ]),
     ).not.toThrow();
   });
+
+  it("rejects fallbacks that need their own settings", () => {
+    for (const fallback of ["briefing", "school"]) {
+      expect(() =>
+        assertValidWidgets([widget({ fallback })]),
+      ).toThrow(/kein Fallback/);
+    }
+    expect(() =>
+      assertValidWidgets([widget({ fallback: "news" })]),
+    ).not.toThrow();
+  });
 });
 
 describe("assertScheduleCompatible", () => {

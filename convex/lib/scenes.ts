@@ -190,6 +190,14 @@ function assertWidgetShape(widget: SceneWidget): void {
     if (widget.fallback === widget.type) {
       throw new ConvexError("Ein Widget kann nicht sein eigener Fallback sein.");
     }
+    // A fallback carries no props, so only types without required settings
+    // qualify; the wall would otherwise have to invent kind/mode/mealDay.
+    if (widget.fallback === "briefing" || widget.fallback === "school") {
+      const name = widgetDef(widget.fallback)?.name ?? widget.fallback;
+      throw new ConvexError(
+        `„${name}" braucht eigene Einstellungen und kann kein Fallback sein.`,
+      );
+    }
   }
 }
 

@@ -432,6 +432,31 @@ describe("drafts and versions", () => {
     expect(listed.scenes).toHaveLength(0);
   });
 
+  it("drops the preview when discarding a never-published scene", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertSettings(t, 1);
+
+    const sceneId = await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Neu",
+      start: start({ schoolDay: "15:30", weekend: null }),
+    });
+    await t.mutation(api.dashboardScenes.sendPreview, {
+      token: parent.token,
+      sceneId,
+    });
+    const result = await t.mutation(api.dashboardScenes.discardDraft, {
+      token: parent.token,
+      sceneId,
+    });
+    expect(result).toEqual({ deleted: true });
+
+    const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
+    expect(feed.preview).toBeUndefined();
+  });
+
   it("trims versions to the last 10 stands", async () => {
     const t = setupCalendarTest();
     const parent = await createParentSession(t);
@@ -506,6 +531,52 @@ describe("drafts and versions", () => {
     expect(scene?.draft?.name).toBe("Eins");
   });
 
+  it("rejects restoring a version whose name is taken again", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+
+    const sceneId = await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Eins",
+      start: start({ schoolDay: "15:30", weekend: "15:30" }),
+    });
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId,
+    });
+    await t.mutation(api.dashboardScenes.saveDraft, {
+      token: parent.token,
+      sceneId,
+      name: "Zwei",
+      start: start({ schoolDay: "15:30", weekend: "15:30" }),
+      widgets: [],
+    });
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId,
+    });
+    // Another scene reuses the freed name.
+    await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Eins",
+      start: start({ schoolDay: "16:30", weekend: null }),
+    });
+
+    const versions = await t.query(api.dashboardScenes.listVersions, {
+      token: parent.token,
+      sceneId,
+    });
+    const first = versions.find((v) => v.snapshot.name === "Eins");
+    await expect(
+      t.mutation(api.dashboardScenes.restoreVersion, {
+        token: parent.token,
+        sceneId,
+        versionId: first!._id,
+      }),
+    ).rejects.toThrow(/gibt es schon/);
+  });
+
   it("reports the publisher name on versions", async () => {
     const t = setupCalendarTest();
     const parent = await createParentSession(t);
@@ -564,6 +635,25 @@ describe("drafts and versions", () => {
         sceneId: "s-custom",
       }),
     ).rejects.toThrow(/mitgelieferten/);
+  });
+
+  it("rejects resetting when another scene uses the default name", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertLayout(t, { name: "Umgebaut", widgets: [] });
+    await insertLayout(t, {
+      sceneId: "s-other",
+      name: "Morgen",
+      start: start({ schoolDay: "15:30", weekend: null }),
+      widgets: [NEWS],
+    });
+
+    await expect(
+      t.mutation(api.dashboardScenes.resetToDefault, {
+        token: parent.token,
+        sceneId: "morning",
+      }),
+    ).rejects.toThrow(/gibt es schon/);
   });
 });
 
@@ -653,6 +743,32 @@ describe("deleteScene", () => {
     expect(listed.revision).toBe(3);
     const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
     expect(feed.preview).toBeUndefined();
+  });
+
+  it("deletes a bare draft without checking published coverage", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    // Published stands cover school days only; the draft adds nothing.
+    await insertLayout(t, { start: start({ weekend: null }) });
+
+    const sceneId = await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Entwurf",
+      start: start({ schoolDay: "15:30", weekend: null }),
+    });
+    await t.mutation(api.dashboardScenes.deleteScene, {
+      token: parent.token,
+      sceneId,
+    });
+
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    expect(listed.scenes.map((s) => s.sceneId).sort()).toEqual([
+      "morning",
+      "night",
+    ]);
   });
 });
 
@@ -927,5 +1043,34 @@ describe("seedDefaultScenes", () => {
 
     const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
     expect(feed.scenes).toHaveLength(5);
+  });
+
+  it("refuses a reseed that would clash with a replacement scene", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await t.mutation(internal.dashboardScenes.seedDefaultScenes, {});
+
+    await t.mutation(api.dashboardScenes.deleteScene, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    const replacement = await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Ersatz",
+      start: start({ schoolDay: "06:45", weekend: null }),
+    });
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId: replacement,
+    });
+
+    await expect(
+      t.mutation(internal.dashboardScenes.seedDefaultScenes, {}),
+    ).rejects.toThrow(/schon die Szene/);
+
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    expect(listed.scenes.some((s) => s.sceneId === "morning")).toBe(false);
   });
 });
