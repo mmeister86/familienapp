@@ -5,56 +5,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Switch } from "@/components/switch"
 import type { CatalogEntry } from "@/lib/scene-layout"
 import type {
   SceneWidget,
   WidgetProps,
 } from "../../../convex/lib/validators"
-
-function PropSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: { value: string; label: string }[]
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
-      <Select
-        value={value}
-        onValueChange={(next) => {
-          if (next !== null) {
-            onChange(next)
-          }
-        }}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </label>
-  )
-}
+import { LabeledSelect } from "./labeled-select"
 
 export function TileSettings({
   widget,
@@ -105,7 +62,7 @@ export function TileSettings({
           </div>
         )}
         {widget.type === "briefing" && (
-          <PropSelect
+          <LabeledSelect
             label="Briefing"
             value={props.kind ?? "today"}
             options={[
@@ -119,7 +76,7 @@ export function TileSettings({
         )}
         {widget.type === "school" && (
           <div className="space-y-2">
-            <PropSelect
+            <LabeledSelect
               label="Ansicht"
               value={props.mode ?? "plan-meal"}
               options={[
@@ -134,7 +91,7 @@ export function TileSettings({
                 })
               }
             />
-            <PropSelect
+            <LabeledSelect
               label="Essen"
               value={props.mealDay ?? "today"}
               options={[
@@ -149,7 +106,7 @@ export function TileSettings({
             />
           </div>
         )}
-        <PropSelect
+        <LabeledSelect
           label="Fallback bei leerem Widget"
           value={widget.fallback ?? "none"}
           options={[

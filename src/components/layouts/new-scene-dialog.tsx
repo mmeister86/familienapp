@@ -3,14 +3,8 @@ import { useMutation } from "convex/react"
 import { api } from "../../../convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { ResponsiveDialog } from "@/components/responsive-dialog"
+import { LabeledSelect } from "./labeled-select"
 import { StartTimeField } from "./start-time-field"
 import { errorMessage, type SceneRow } from "./use-scene-form"
 
@@ -108,29 +102,18 @@ export function NewSceneDialog({
           onChange={setWeekend}
         />
       </div>
-      <label className="block">
-        <span className="mb-1 block text-xs text-muted-foreground">
-          Start mit
-        </span>
-        <Select
-          value={copyFrom === "" ? "empty" : copyFrom}
-          onValueChange={(value) =>
-            setCopyFrom(value === null || value === "empty" ? "" : value)
-          }
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="empty">Leere Szene</SelectItem>
-            {layouts.map((scene) => (
-              <SelectItem key={scene.sceneId} value={scene.sceneId}>
-                Kopie von {scene.draft?.name ?? scene.published?.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
+      <LabeledSelect
+        label="Start mit"
+        value={copyFrom === "" ? "empty" : copyFrom}
+        options={[
+          { value: "empty", label: "Leere Szene" },
+          ...layouts.map((scene) => ({
+            value: scene.sceneId,
+            label: `Kopie von ${scene.draft?.name ?? scene.published?.name ?? "?"}`,
+          })),
+        ]}
+        onChange={(value) => setCopyFrom(value === "empty" ? "" : value)}
+      />
       {error !== null && (
         <p role="alert" className="text-sm text-destructive">
           {error}

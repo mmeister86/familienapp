@@ -10,6 +10,7 @@ import type { DayKind } from "@/lib/scene-schedule"
 import {
   applyLayoutChange,
   defaultPropsFor,
+  samePlacements,
 } from "@/lib/scene-layout"
 import type { Layout } from "react-grid-layout/legacy"
 import { defaultScene } from "../../convex/lib/defaultScenes"
@@ -156,7 +157,12 @@ export function LayoutsPage() {
     if (!form) {
       return
     }
-    updateForm({ widgets: applyLayoutChange(form.widgets, layout) })
+    // The grid emits on mount: only real moves mark the form dirty, so
+    // opening a scene never creates a spurious draft.
+    const next = applyLayoutChange(form.widgets, layout)
+    if (!samePlacements(form.widgets, next)) {
+      updateForm({ widgets: next })
+    }
   }
 
   const handleDropWidget = (

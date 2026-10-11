@@ -67,6 +67,7 @@ export function SceneCanvas({
           preventCollision
           isBounded
           isDroppable
+          droppingItem={{ i: "__dropping", x: 0, y: 0, w: 4, h: 4 }}
           draggableCancel=".tile-gear"
           resizeHandles={["se"]}
           onLayoutChange={onLayoutChange}

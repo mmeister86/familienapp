@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyLayoutChange,
   defaultPropsFor,
+  samePlacements,
   widgetsToLayout,
 } from "../../src/lib/scene-layout.js";
 import type { SceneWidget } from "../../convex/lib/validators.js";
@@ -68,5 +69,20 @@ describe("defaultPropsFor", () => {
     });
     expect(defaultPropsFor("clock")).toEqual({});
     expect(defaultPropsFor("news")).toEqual({});
+  });
+});
+
+describe("samePlacements", () => {
+  it("ignores order-independent identity and compares geometry", () => {
+    const widgets = [widget(), widget({ id: "w2", type: "news" })];
+    expect(samePlacements(widgets, widgets)).toBe(true);
+    expect(samePlacements(widgets, [widgets[1], widgets[0]])).toBe(true);
+    expect(
+      samePlacements(widgets, [{ ...widgets[0], x: 1 }, widgets[1]]),
+    ).toBe(false);
+    expect(samePlacements(widgets, [widgets[0]])).toBe(false);
+    expect(samePlacements(widgets, [...widgets, widget({ id: "w3" })])).toBe(
+      false,
+    );
   });
 });

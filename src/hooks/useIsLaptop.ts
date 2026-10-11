@@ -6,20 +6,33 @@ import { useEffect, useState } from "react"
 // minimum width for desktop-only pages like the scene builder.
 const LAPTOP_BREAKPOINT = 1024
 
+function matchesLaptop(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(`(min-width: ${LAPTOP_BREAKPOINT}px)`).matches
+  )
+}
+
+// Resolved synchronously at mount (no undefined first render): guards must
+// not redirect before the viewport is known.
 export function useIsLaptop() {
-  const [isLaptop, setIsLaptop] = useState<boolean | undefined>(undefined)
+  const [isLaptop, setIsLaptop] = useState(matchesLaptop)
 
   useEffect(() => {
-    const mql = window.matchMedia(`(min-width: ${LAPTOP_BREAKPOINT}px)`)
-    const onChange = () => {
-      setIsLaptop(window.innerWidth >= LAPTOP_BREAKPOINT)
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return
     }
-
+    const mql = window.matchMedia(`(min-width: ${LAPTOP_BREAKPOINT}px)`)
+    const onChange = (event: MediaQueryListEvent): void => {
+      setIsLaptop(event.matches)
+    }
     mql.addEventListener("change", onChange)
-    setTimeout(() => setIsLaptop(window.innerWidth >= LAPTOP_BREAKPOINT), 0)
-
     return () => mql.removeEventListener("change", onChange)
   }, [])
 
-  return !!isLaptop
+  return isLaptop
 }
