@@ -53,6 +53,10 @@
 - Extra deps it brings: `@base-ui/react`, `framer-motion`, `iconsax-reactjs`, `lucide-react`
 - UIAble also offers an MCP server (https://uiable.com/doc/mcp); optional for the coding agent to look up components
 
+**Scene builder (planned, Phase 8)**
+
+- The grid page `/layouts` (parents, laptop ≥ 1024 px only) uses `react-grid-layout` — approved dependency for this page only. Check the current docs (Context7) before use; the API changed between majors.
+
 **Domains**
 
 - `familienapp.matthias.lol` → PWA
@@ -314,6 +318,7 @@ type Recurrence =
 - **Tasks:** list of task definitions, create/edit (title, notes, assignee, points if kid, recurrence picker, start/end date)
 - **Rewards admin:** CRUD
 - **Points:** balances per kid, manual adjustment
+- **Wand-Szenen (`/layouts`, Phase 8):** scene builder, parents only, laptop (≥ 1024 px) only — no phone/tablet layout, direct access below that width redirects silently to `/`
 
 **UI language:** German. **Code language:** English.
 
@@ -370,6 +375,16 @@ Unraid (wall dashboard)  ──POST /ingest/*──▶  Convex  ◀──reactiv
   parents: family stand minus child-assigned ones; dangling bindings fail closed). `childSnapshots` remains the
   compatible projection with the legacy pusher as its only writer until the later central-projection plan.
 
+### 8.1c Pull: `GET /dashboard/scenes` (dashboard reads scenes, scene builder — planned, Phase 8)
+
+- Auth: `Authorization: Bearer <SCENES_DASHBOARD_TOKEN>` (Convex env var, set via `npx convex env set`;
+  value only on the command line, never in a file). This token authorizes nothing else — no ingest, no parent
+  functions — and `DASHBOARD_TOKEN`/`INGEST_TOKEN`/`CALENDAR_DASHBOARD_TOKEN` do not authorize this route.
+- Authoritative contract: `.docs/FAMILY_APP.md` (`GET /dashboard/scenes`, added with the implementation); shared test fixture
+  `tests/fixtures/dashboard-scenes-v1.json` (byte-identical to the dashboard's `testdata/dashboard-scenes-v1.json`).
+- Feed = published scene stands only (12 cols × 24 rows grid) plus an optional 2-minute `preview`; never-seeded → `503`
+  so the dashboard keeps its `SCENE_*` schedule and built-in layouts.
+
 ### 8.2 Push: `POST /ingest/*` (dashboard writes aggregated data)
 
 - Auth: `Authorization: Bearer <INGEST_TOKEN>` (separate from `DASHBOARD_TOKEN`: one token reads, the other writes)
@@ -406,7 +421,8 @@ Unraid (wall dashboard)  ──POST /ingest/*──▶  Convex  ◀──reactiv
 - Local `.env.local` (gitignored): `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY`
 - Prod env vars in Convex: `PIN_*`, `DASHBOARD_TOKEN`, `INGEST_TOKEN`, plus calendar pilot:
   `CALENDAR_DASHBOARD_TOKEN` and per-source feed addresses under their `urlEnvKey`
-  (e.g. `FAMILY_CALENDAR_URL`, `SCHOOL_CALENDAR_URL`)
+  (e.g. `FAMILY_CALENDAR_URL`, `SCHOOL_CALENDAR_URL`), plus scene builder (Phase 8):
+  `SCENES_DASHBOARD_TOKEN` (dashboard side: `FAMILY_APP_SCENES_TOKEN`)
 
 **PWA & branding**
 
@@ -508,6 +524,35 @@ Work one phase at a time. Each phase ends with typecheck + lint passing and the 
 - [ ] Completion animation / confetti for kids
 - [ ] Offline banner when Convex disconnects
 - [ ] Web push notifications (pending approvals for parents, new tasks for kids)
+
+### Phase 8 — Scene Builder (wall scenes)
+
+Parents compose the wall dashboard's scenes (schedule + 12×24 tile layouts) on a desktop-only page; Convex owns the
+schedule and layouts, the dashboard polls them. Follows the calendar-pilot pattern: dedicated read token per feed,
+Go last-good cache, byte-identical JSON fixture in both repos.
+
+Decisions (2026-10-11, non-negotiable):
+
+- Parents only (`requireParent` in every Convex function, not just the UI); kids never see scenes
+- No builder on phone/tablet: `/layouts` exists only at ≥ 1024 px, redirects silently to `/` below (see `AGENTS.md` exception)
+- The night scene keeps its built-in look; only its start times are editable, effective immediately
+- Day types are Mo–Fr vs Sa/So only; no per-weekday, holiday or vacation schedules in v1
+
+- [ ] Convex backend: `dashboardScenes` (draft + published), `dashboardSceneVersions` (last 10), `dashboardPreview`,
+  revision key in `familyBackendSettings`; `requireParent` functions (list/catalog/create/saveDraft/publish/setNightStart/
+  discard/delete/versions/restore/resetToDefault/sendPreview); pure validation (`convex/lib/scenes.ts`) with Vitest;
+  `GET /dashboard/scenes` with `SCENES_DASHBOARD_TOKEN`; seed from today's `SCENE_*` times + built-in layouts
+- [ ] Dashboard repo: `internal/scenes` poll client (15 s) + last-good cache, runtime-swappable schedule in
+  `internal/scene`, `preview` wins over schedule, `/api/scene` for fast refresh, briefing lead times follow
+  `briefing.kind` widgets; frontend renders the 12×24 grid from the feed, `kind: "night"` keeps today's night view
+- [ ] Builder UI (`/layouts`, "Verwalten", parents, ≥ 1024 px): scene tabs, inline name + Mo–Fr/Sa/So start times,
+  `react-grid-layout` canvas (12 cols, 24 rows, bounded, no compaction), widget sidebar from `catalog`,
+  auto-save drafts, publish/discard/preview/versions/reset/delete toolbar, Convex errors as toasts
+
+**Done when:** a parent drags a widget onto the 12×24 canvas at 1440 px and the wall follows within 30 s of
+publishing; drafts never reach the wall; "An die Wand" shows for 2 min; night time changes apply without
+publishing and the night looks as before; kids and narrow viewports never see `/layouts`; with Convex stopped the
+wall keeps its last stand (even after container restart); after the seed all five scenes look and switch as before.
 
 ---
 

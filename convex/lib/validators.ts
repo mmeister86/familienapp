@@ -99,6 +99,67 @@ export const briefingFields = {
 };
 export const briefingValidator = v.object(briefingFields);
 
+// Wall-dashboard scenes (Phase 8). Shared by the schema, the scene mutations
+// and the GET /dashboard/scenes feed. Unlike the ingest contract above, the
+// scene schedule uses explicit null for "does not run on these days".
+export const widgetPropsValidator = v.object({
+  wide: v.optional(v.boolean()), // clock: wide top card
+  hints: v.optional(v.boolean()), // clock: weather tips for the school run
+  kind: v.optional(v.union(v.literal("today"), v.literal("tomorrow"))), // briefing
+  mode: v.optional(
+    v.union(v.literal("full"), v.literal("plan"), v.literal("plan-meal")),
+  ), // school
+  mealDay: v.optional(v.union(v.literal("today"), v.literal("tomorrow"))), // school
+});
+
+export const sceneWidgetFields = {
+  id: v.string(), // unique per scene
+  type: v.string(), // WidgetType; checked against the catalog in ./scenes.ts
+  x: v.number(),
+  y: v.number(),
+  w: v.number(),
+  h: v.number(),
+  props: v.optional(widgetPropsValidator),
+  fallback: v.optional(v.string()), // WidgetType shown when this one is empty
+};
+export const sceneWidgetValidator = v.object(sceneWidgetFields);
+
+export const sceneStartValidator = v.object({
+  schoolDay: v.union(v.string(), v.null()), // "HH:MM" or null = does not run
+  weekend: v.union(v.string(), v.null()),
+});
+
+// Draft, published stand and version snapshot share one shape.
+export const sceneSnapshotFields = {
+  name: v.string(),
+  start: sceneStartValidator,
+  widgets: v.array(sceneWidgetValidator),
+};
+export const sceneSnapshotValidator = v.object(sceneSnapshotFields);
+
+export const scenesFeedSceneValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  kind: v.union(v.literal("layout"), v.literal("night")),
+  start: sceneStartValidator,
+  widgets: v.optional(v.array(sceneWidgetValidator)), // absent for night
+});
+
+export const scenesFeedPreviewValidator = v.object({
+  sceneId: v.string(),
+  until: v.number(), // ms timestamp the preview is valid for
+  widgets: v.array(sceneWidgetValidator),
+});
+
+// GET /dashboard/scenes response. Pinned by tests/fixtures/dashboard-scenes-v1.json.
+export const scenesFeedValidator = v.object({
+  version: v.literal(1),
+  revision: v.number(),
+  grid: v.object({ cols: v.literal(12), rows: v.literal(24) }),
+  scenes: v.array(scenesFeedSceneValidator),
+  preview: v.optional(scenesFeedPreviewValidator),
+});
+
 export type ChildDay = Infer<typeof childDayValidator>;
 export type Lesson = Infer<typeof lessonValidator>;
 export type LessonChange = Infer<typeof lessonChangeValidator>;
@@ -109,3 +170,10 @@ export type Exam = Infer<typeof examValidator>;
 export type ChildSnapshot = Infer<typeof childSnapshotValidator>;
 export type BriefingItem = Infer<typeof briefingItemValidator>;
 export type Briefing = Infer<typeof briefingValidator>;
+export type WidgetProps = Infer<typeof widgetPropsValidator>;
+export type SceneWidget = Infer<typeof sceneWidgetValidator>;
+export type SceneStart = Infer<typeof sceneStartValidator>;
+export type SceneSnapshot = Infer<typeof sceneSnapshotValidator>;
+export type ScenesFeedScene = Infer<typeof scenesFeedSceneValidator>;
+export type ScenesFeedPreview = Infer<typeof scenesFeedPreviewValidator>;
+export type ScenesFeed = Infer<typeof scenesFeedValidator>;
