@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { useSession } from "@/hooks/useSession"
+import { useToasts } from "@/hooks/useToasts"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,14 +12,23 @@ import {
   defaultPropsFor,
 } from "@/lib/scene-layout"
 import type { Layout } from "react-grid-layout/legacy"
+import { defaultScene } from "../../convex/lib/defaultScenes"
 import type {
   SceneStart,
   SceneWidget,
 } from "../../convex/lib/validators"
+import { ConfirmDialog } from "@/components/layouts/confirm-dialog"
+import { NewSceneDialog } from "@/components/layouts/new-scene-dialog"
 import { SceneCanvas } from "@/components/layouts/scene-canvas"
 import { SceneHeader } from "@/components/layouts/scene-header"
 import { SceneTabs } from "@/components/layouts/scene-tabs"
-import { useSceneForm } from "@/components/layouts/use-scene-form"
+import { SceneToolbar } from "@/components/layouts/scene-toolbar"
+import {
+  errorMessage,
+  useSceneForm,
+} from "@/components/layouts/use-scene-form"
+import { Toaster } from "@/components/layouts/toaster"
+import { VersionHistory } from "@/components/layouts/version-history"
 import { WidgetSidebar } from "@/components/layouts/widget-sidebar"
 
 function newWidgetId(existing: readonly string[]): string {
@@ -37,10 +47,22 @@ export function LayoutsPage() {
     token ? { token } : "skip",
   )
   const setNightStart = useMutation(api.dashboardScenes.setNightStart)
+  const publishScene = useMutation(api.dashboardScenes.publish)
+  const discardDraft = useMutation(api.dashboardScenes.discardDraft)
+  const sendPreview = useMutation(api.dashboardScenes.sendPreview)
+  const resetToDefault = useMutation(api.dashboardScenes.resetToDefault)
+  const deleteScene = useMutation(api.dashboardScenes.deleteScene)
   const [explicitId, setExplicitId] = useState<string | null>(null)
   const [nightError, setNightError] = useState<string | null>(null)
   const [nightUndo, setNightUndo] = useState<SceneStart | null>(null)
+  const [versionsOpen, setVersionsOpen] = useState(false)
+  const [newOpen, setNewOpen] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [previewUntil, setPreviewUntil] = useState<number | null>(null)
   const draggedType = useRef<string | null>(null)
+  const { toasts, notify, dismiss } = useToasts()
 
   useEffect(() => {
     if (!nightUndo) {
@@ -55,7 +77,11 @@ export function LayoutsPage() {
     explicitId !== null && scenes?.some((s) => s.sceneId === explicitId)
       ? explicitId
       : (scenes?.[0]?.sceneId ?? null)
-  const { scene, form, updateForm } = useSceneForm(token, scenes, selectedId)
+  const { scene, form, updateForm, saveStatus, saveError } = useSceneForm(
+    token,
+    scenes,
+    selectedId,
+  )
 
   if (!token || !scenes || !catalog) {
     return (
@@ -72,7 +98,7 @@ export function LayoutsPage() {
     )
   }
 
-  if (!scene) {
+  if (!scene || !selectedId) {
     return (
       <section>
         <PageHeader
@@ -87,8 +113,10 @@ export function LayoutsPage() {
     )
   }
 
+  const sceneId = selectedId
+
   const handleStartChange = (day: DayKind, value: string | null): void => {
-    if (!token || !selectedId) {
+    if (!token) {
       return
     }
     if (scene.kind === "night") {
@@ -101,10 +129,7 @@ export function LayoutsPage() {
           setNightError(null)
           setNightUndo(old)
         },
-        (e: unknown) =>
-          setNightError(
-            e instanceof Error ? e.message : "Speichern fehlgeschlagen",
-          ),
+        (e: unknown) => setNightError(errorMessage(e)),
       )
       return
     }
@@ -123,10 +148,7 @@ export function LayoutsPage() {
         setNightUndo(null)
         setNightError(null)
       },
-      (e: unknown) =>
-        setNightError(
-          e instanceof Error ? e.message : "Speichern fehlgeschlagen",
-        ),
+      (e: unknown) => setNightError(errorMessage(e)),
     )
   }
 
@@ -184,6 +206,72 @@ export function LayoutsPage() {
     updateForm({ widgets: form.widgets.filter((widget) => widget.id !== id) })
   }
 
+  const withToken = <T,>(fn: (token: string) => Promise<T>): void => {
+    if (!token) {
+      return
+    }
+    void fn(token)
+  }
+
+  const handlePublish = (): void => {
+    withToken(async (t) => {
+      try {
+        await publishScene({ token: t, sceneId })
+        notify("success", "Veröffentlicht — die Wand übernimmt die Szene.")
+      } catch (e: unknown) {
+        notify("error", errorMessage(e))
+      }
+    })
+  }
+
+  const handleDiscard = (): void => {
+    withToken(async (t) => {
+      try {
+        const result = await discardDraft({ token: t, sceneId })
+        notify(
+          "success",
+          result.deleted ? "Szene gelöscht." : "Entwurf verworfen.",
+        )
+      } catch (e: unknown) {
+        notify("error", errorMessage(e))
+      }
+    })
+  }
+
+  const handlePreview = (): void => {
+    withToken(async (t) => {
+      try {
+        const result = await sendPreview({ token: t, sceneId })
+        setPreviewUntil(result.until)
+        notify("success", "Läuft 2 Minuten auf der Wand.")
+      } catch (e: unknown) {
+        notify("error", errorMessage(e))
+      }
+    })
+  }
+
+  const handleResetDefault = (): void => {
+    withToken(async (t) => {
+      try {
+        await resetToDefault({ token: t, sceneId })
+        notify("success", "Standard als Entwurf geladen.")
+      } catch (e: unknown) {
+        notify("error", errorMessage(e))
+      }
+    })
+  }
+
+  const handleDelete = (): void => {
+    withToken(async (t) => {
+      try {
+        await deleteScene({ token: t, sceneId })
+        notify("success", "Szene gelöscht.")
+      } catch (e: unknown) {
+        notify("error", errorMessage(e))
+      }
+    })
+  }
+
   const barScenes = scenes.flatMap((entry) => {
     if (entry.sceneId === selectedId) {
       const snap =
@@ -219,7 +307,29 @@ export function LayoutsPage() {
         title="Wand-Szenen"
         subtitle="Zeitplan und Kachel-Layouts für das Wanddisplay."
       />
-      <SceneTabs scenes={scenes} selectedId={selectedId} onSelect={setExplicitId} />
+      <div className="flex items-center justify-between gap-4">
+        <SceneTabs
+          scenes={scenes}
+          selectedId={selectedId}
+          onSelect={setExplicitId}
+        />
+        <Button variant="outline" onClick={() => setNewOpen(true)}>
+          Neue Szene
+        </Button>
+      </div>
+      <SceneToolbar
+        saveStatus={saveStatus}
+        hasDraft={scene.draft !== null}
+        isNight={scene.kind === "night"}
+        isSeeded={defaultScene(sceneId) !== undefined}
+        previewUntil={previewUntil}
+        onPublish={handlePublish}
+        onDiscard={() => setConfirmDiscard(true)}
+        onPreview={handlePreview}
+        onOpenVersions={() => setVersionsOpen(true)}
+        onResetDefault={() => setConfirmReset(true)}
+        onDelete={() => setConfirmDelete(true)}
+      />
       <SceneHeader
         scene={scene}
         name={headerName}
@@ -229,7 +339,7 @@ export function LayoutsPage() {
         }
         onStartChange={handleStartChange}
         barScenes={barScenes}
-        error={nightError}
+        error={scene.kind === "night" ? nightError : saveError}
       />
       {scene.kind === "night" ? (
         <div className="max-w-[600px] space-y-3 rounded-xl border border-border bg-card p-6">
@@ -271,6 +381,48 @@ export function LayoutsPage() {
           </div>
         )
       )}
+      <VersionHistory
+        token={token}
+        sceneId={selectedId}
+        open={versionsOpen}
+        onOpenChange={setVersionsOpen}
+        onRestored={() => notify("success", "Version als Entwurf geladen.")}
+      />
+      <NewSceneDialog
+        token={token}
+        scenes={scenes}
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        onCreated={(id) => {
+          setExplicitId(id)
+          notify("success", "Szene angelegt.")
+        }}
+      />
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Entwurf verwerfen?"
+        message="Die ungespeicherten Änderungen gehen verloren."
+        confirmLabel="Verwerfen"
+        onConfirm={handleDiscard}
+      />
+      <ConfirmDialog
+        open={confirmReset}
+        onOpenChange={setConfirmReset}
+        title="Standard laden?"
+        message="Das eingebaute Layout ersetzt den aktuellen Entwurf."
+        confirmLabel="Standard laden"
+        onConfirm={handleResetDefault}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Szene löschen?"
+        message="Die Szene verschwindet sofort von der Wand. Das lässt sich nicht rückgängig machen."
+        confirmLabel="Löschen"
+        onConfirm={handleDelete}
+      />
+      <Toaster toasts={toasts} onDismiss={dismiss} />
     </section>
   )
 }

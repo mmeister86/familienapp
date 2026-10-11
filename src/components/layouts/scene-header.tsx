@@ -1,6 +1,5 @@
-import { useEffect, useRef } from "react"
 import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/switch"
+import { StartTimeField } from "./start-time-field"
 import type { SceneStart } from "../../../convex/lib/validators"
 import {
   daySegments,
@@ -72,17 +71,6 @@ export function SceneHeader({
   barScenes: SceneScheduleInput[]
   error: string | null
 }) {
-  // Restores the previous time when a day is switched back on.
-  const lastTimes = useRef({ schoolDay: "06:45", weekend: "07:30" })
-  useEffect(() => {
-    if (start.schoolDay !== null) {
-      lastTimes.current.schoolDay = start.schoolDay
-    }
-    if (start.weekend !== null) {
-      lastTimes.current.weekend = start.weekend
-    }
-  }, [start])
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
@@ -102,32 +90,13 @@ export function SceneHeader({
           </label>
         )}
         {DAY_FIELDS.map(({ day, label }) => (
-          <div key={day} className="flex items-end gap-2">
-            <label className="block">
-              <span className="mb-1 block text-xs text-muted-foreground">
-                {label}
-              </span>
-              <Input
-                type="time"
-                value={start[day] ?? ""}
-                disabled={start[day] === null}
-                onChange={(event) =>
-                  onStartChange(day, event.target.value || null)
-                }
-                className="w-32"
-              />
-            </label>
-            <Switch
-              checked={start[day] !== null}
-              onCheckedChange={(checked) =>
-                onStartChange(
-                  day,
-                  checked ? lastTimes.current[day] : null,
-                )
-              }
-              label={`${label} ein- oder ausschalten`}
-            />
-          </div>
+          <StartTimeField
+            key={day}
+            day={day}
+            label={label}
+            value={start[day]}
+            onChange={(value) => onStartChange(day, value)}
+          />
         ))}
       </div>
       {error !== null && (

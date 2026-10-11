@@ -29,7 +29,15 @@ function snapshotOf(scene: SceneRow): SceneForm | null {
   return { name: snap.name, start: { ...snap.start }, widgets: snap.widgets }
 }
 
-function messageOf(error: unknown): string {
+export function errorMessage(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "data" in error &&
+    typeof error.data === "string"
+  ) {
+    return error.data
+  }
   return error instanceof Error ? error.message : "Speichern fehlgeschlagen"
 }
 
@@ -76,7 +84,7 @@ export function useSceneForm(
           setDirty(false)
         },
         (e: unknown) => {
-          setError(messageOf(e))
+          setError(errorMessage(e))
         },
       )
     }, 1000)
