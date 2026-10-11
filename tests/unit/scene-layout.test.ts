@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyLayoutChange,
   defaultPropsFor,
+  firstFreeSpot,
   samePlacements,
   widgetsToLayout,
 } from "../../src/lib/scene-layout.js";
@@ -84,5 +85,20 @@ describe("samePlacements", () => {
     expect(samePlacements(widgets, [...widgets, widget({ id: "w3" })])).toBe(
       false,
     );
+  });
+});
+
+describe("firstFreeSpot", () => {
+  it("takes the top-left free rectangle", () => {
+    expect(firstFreeSpot([], 4, 4)).toEqual({ x: 0, y: 0 });
+    expect(firstFreeSpot([widget()], 4, 4)).toEqual({ x: 0, y: 4 });
+    const fullRow = [widget({ x: 0, y: 0, w: 12, h: 4 })];
+    expect(firstFreeSpot(fullRow, 6, 4)).toEqual({ x: 0, y: 4 });
+  });
+
+  it("returns null when nothing fits", () => {
+    const full = [widget({ x: 0, y: 0, w: 12, h: 24 })];
+    expect(firstFreeSpot(full, 4, 4)).toBeNull();
+    expect(firstFreeSpot([], 13, 4)).toBeNull();
   });
 });

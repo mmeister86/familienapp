@@ -112,7 +112,14 @@ export function TileSettings({
           options={[
             { value: "none", label: "Kein Fallback" },
             ...catalog
-              .filter((entry) => entry.type !== widget.type)
+              // Mirror of the server rule: briefing/school need their own
+              // settings, so they cannot serve as fallback.
+              .filter(
+                (entry) =>
+                  entry.type !== widget.type &&
+                  entry.type !== "briefing" &&
+                  entry.type !== "school",
+              )
               .map((entry) => ({ value: entry.type, label: entry.name })),
           ]}
           onChange={(value) =>

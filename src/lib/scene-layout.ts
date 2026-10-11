@@ -68,6 +68,36 @@ export function samePlacements(a: SceneWidget[], b: SceneWidget[]): boolean {
   })
 }
 
+const GRID_COLS = 12
+const GRID_ROWS = 24
+
+function overlaps(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+/**
+ * First free top-left rectangle of the given size, row by row, or null when
+ * nothing fits (keyboard/click placement without drag and drop).
+ */
+export function firstFreeSpot(
+  widgets: Pick<SceneWidget, "x" | "y" | "w" | "h">[],
+  w: number,
+  h: number,
+): { x: number; y: number } | null {
+  for (let y = 0; y + h <= GRID_ROWS; y++) {
+    for (let x = 0; x + w <= GRID_COLS; x++) {
+      const candidate = { x, y, w, h }
+      if (!widgets.some((widget) => overlaps(widget, candidate))) {
+        return { x, y }
+      }
+    }
+  }
+  return null
+}
+
 /** Default props for a freshly dropped widget (required settings prefilled). */
 export function defaultPropsFor(type: string): WidgetProps {
   if (type === "briefing") {

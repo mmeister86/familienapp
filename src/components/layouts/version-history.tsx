@@ -21,12 +21,14 @@ export function VersionHistory({
   sceneId,
   open,
   onOpenChange,
+  disabled,
   onRestored,
 }: {
   token: string | null
   sceneId: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  disabled: boolean
   onRestored: () => void
 }) {
   const versions = useQuery(
@@ -86,6 +88,7 @@ export function VersionHistory({
               <Button
                 size="sm"
                 variant="outline"
+                disabled={disabled}
                 onClick={() => handleRestore(version._id)}
               >
                 Als Entwurf laden

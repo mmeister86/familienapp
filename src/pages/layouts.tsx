@@ -10,7 +10,7 @@ import type { DayKind } from "@/lib/scene-schedule"
 import {
   applyLayoutChange,
   defaultPropsFor,
-  samePlacements,
+  firstFreeSpot,
 } from "@/lib/scene-layout"
 import type { Layout } from "react-grid-layout/legacy"
 import { defaultScene } from "../../convex/lib/defaultScenes"
@@ -63,6 +63,9 @@ export function LayoutsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [previewUntil, setPreviewUntil] = useState<number | null>(null)
   const draggedType = useRef<string | null>(null)
+  // Latest night times, including saves still in flight: overlapping edits
+  // must build on each other, not on the stale query snapshot.
+  const nightPending = useRef<SceneStart | null>(null)
   const { toasts, notify, dismiss } = useToasts()
 
   useEffect(() => {
@@ -78,11 +81,8 @@ export function LayoutsPage() {
     explicitId !== null && scenes?.some((s) => s.sceneId === explicitId)
       ? explicitId
       : (scenes?.[0]?.sceneId ?? null)
-  const { scene, form, updateForm, saveStatus, saveError } = useSceneForm(
-    token,
-    scenes,
-    selectedId,
-  )
+  const { scene, form, updateForm, revert, saveStatus, saveError } =
+    useSceneForm(token, scenes, selectedId)
 
   if (!token || !scenes || !catalog) {
     return (
@@ -121,12 +121,17 @@ export function LayoutsPage() {
       return
     }
     if (scene.kind === "night") {
-      if (!scene.published) {
+      const base = nightPending.current ?? scene.published?.start
+      if (!base) {
         return
       }
-      const start: SceneStart = { ...scene.published.start, [day]: value }
+      const start: SceneStart = { ...base, [day]: value }
+      nightPending.current = start
       setNightStart({ token, start }).then(
         (old) => {
+          if (nightPending.current === start) {
+            nightPending.current = null
+          }
           setNightError(null)
           setNightUndo(old)
         },
@@ -154,15 +159,9 @@ export function LayoutsPage() {
   }
 
   const handleLayoutChange = (layout: Layout): void => {
-    if (!form) {
-      return
-    }
-    // The grid emits on mount: only real moves mark the form dirty, so
-    // opening a scene never creates a spurious draft.
-    const next = applyLayoutChange(form.widgets, layout)
-    if (!samePlacements(form.widgets, next)) {
-      updateForm({ widgets: next })
-    }
+    // Functional: RGL fires this in the same tick as onDrop, before the
+    // re-render, so render-scope state would drop the new tile.
+    updateForm((prev) => ({ widgets: applyLayoutChange(prev.widgets, layout) }))
   }
 
   const handleDropWidget = (
@@ -180,6 +179,36 @@ export function LayoutsPage() {
       widgets: [
         ...form.widgets,
         { id, type, x, y, w, h, props: defaultPropsFor(type) },
+      ],
+    })
+  }
+
+  const handleAddWidget = (type: string): void => {
+    if (!form) {
+      return
+    }
+    const def = catalog.find((entry) => entry.type === type)
+    if (!def || form.widgets.some((widget) => widget.type === type)) {
+      return
+    }
+    const spot = firstFreeSpot(form.widgets, def.minW, def.minH)
+    if (!spot) {
+      notify("error", "Kein Platz frei — erst eine Kachel entfernen.")
+      return
+    }
+    const id = newWidgetId(form.widgets.map((widget) => widget.id))
+    updateForm({
+      widgets: [
+        ...form.widgets,
+        {
+          id,
+          type,
+          x: spot.x,
+          y: spot.y,
+          w: def.minW,
+          h: def.minH,
+          props: defaultPropsFor(type),
+        },
       ],
     })
   }
@@ -234,6 +263,7 @@ export function LayoutsPage() {
     withToken(async (t) => {
       try {
         const result = await discardDraft({ token: t, sceneId })
+        revert(scenes, sceneId)
         notify(
           "success",
           result.deleted ? "Szene gelöscht." : "Entwurf verworfen.",
@@ -260,6 +290,7 @@ export function LayoutsPage() {
     withToken(async (t) => {
       try {
         await resetToDefault({ token: t, sceneId })
+        revert(scenes, sceneId)
         notify("success", "Standard als Entwurf geladen.")
       } catch (e: unknown) {
         notify("error", errorMessage(e))
@@ -306,6 +337,7 @@ export function LayoutsPage() {
     schoolDay: null,
     weekend: null,
   }
+  const saving = saveStatus === "saving"
 
   return (
     <section className="space-y-6">
@@ -328,6 +360,7 @@ export function LayoutsPage() {
         hasDraft={scene.draft !== null}
         isNight={scene.kind === "night"}
         isSeeded={defaultScene(sceneId) !== undefined}
+        busy={saving}
         previewUntil={previewUntil}
         onPublish={handlePublish}
         onDiscard={() => setConfirmDiscard(true)}
@@ -372,6 +405,7 @@ export function LayoutsPage() {
               onDragStart={(type) => {
                 draggedType.current = type
               }}
+              onAdd={handleAddWidget}
             />
             <div className="min-w-0 flex-1">
               <SceneCanvas
@@ -392,7 +426,11 @@ export function LayoutsPage() {
         sceneId={selectedId}
         open={versionsOpen}
         onOpenChange={setVersionsOpen}
-        onRestored={() => notify("success", "Version als Entwurf geladen.")}
+        disabled={saving}
+        onRestored={() => {
+          revert(scenes, selectedId)
+          notify("success", "Version als Entwurf geladen.")
+        }}
       />
       <NewSceneDialog
         token={token}

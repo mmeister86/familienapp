@@ -6,10 +6,13 @@ export function WidgetSidebar({
   catalog,
   placedTypes,
   onDragStart,
+  onAdd,
 }: {
   catalog: readonly CatalogEntry[] | undefined
   placedTypes: readonly string[]
   onDragStart: (type: string) => void
+  /** Keyboard/click path: appends the widget at the first free spot. */
+  onAdd: (type: string) => void
 }) {
   return (
     <aside className="w-60 shrink-0">
@@ -21,8 +24,10 @@ export function WidgetSidebar({
           const placed = placedTypes.includes(entry.type)
           const Icon = widgetIcon(entry.type)
           return (
-            <div
+            <button
               key={entry.type}
+              type="button"
+              disabled={placed}
               draggable={!placed}
               onDragStart={(event) => {
                 // Firefox only fires drag events with data set; the type
@@ -31,10 +36,13 @@ export function WidgetSidebar({
                 event.dataTransfer.effectAllowed = "copy"
                 onDragStart(entry.type)
               }}
+              onClick={() => onAdd(entry.type)}
               aria-disabled={placed}
               className={cn(
-                "flex items-center gap-3 rounded-xl border border-border bg-card p-3",
-                placed ? "opacity-40" : "cursor-grab active:cursor-grabbing",
+                "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed",
+                placed
+                  ? "opacity-40"
+                  : "cursor-grab active:cursor-grabbing",
               )}
             >
               <Icon className="size-5 shrink-0 text-primary" aria-hidden="true" />
@@ -46,7 +54,7 @@ export function WidgetSidebar({
                     : `min. ${entry.minW} × ${entry.minH}`}
                 </div>
               </div>
-            </div>
+            </button>
           )
         })}
       </div>

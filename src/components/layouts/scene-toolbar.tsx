@@ -12,6 +12,7 @@ export function SceneToolbar({
   hasDraft,
   isNight,
   isSeeded,
+  busy,
   previewUntil,
   onPublish,
   onDiscard,
@@ -24,6 +25,8 @@ export function SceneToolbar({
   hasDraft: boolean
   isNight: boolean
   isSeeded: boolean
+  /** Autosave in flight: destructive actions wait to avoid clobbering it. */
+  busy: boolean
   previewUntil: number | null
   onPublish: () => void
   onDiscard: () => void
@@ -66,7 +69,7 @@ export function SceneToolbar({
         </Button>
         <Button
           variant="outline"
-          disabled={!hasDraft || isNight}
+          disabled={!hasDraft || isNight || busy}
           onClick={onDiscard}
         >
           Verwerfen
@@ -78,7 +81,7 @@ export function SceneToolbar({
           Versionen
         </Button>
         {isSeeded && !isNight && (
-          <Button variant="outline" onClick={onResetDefault}>
+          <Button variant="outline" disabled={busy} onClick={onResetDefault}>
             Standard laden
           </Button>
         )}

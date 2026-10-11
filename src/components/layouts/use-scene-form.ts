@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation } from "convex/react"
 import type { FunctionReturnType } from "convex/server"
 import { api } from "../../../convex/_generated/api"
@@ -41,10 +41,17 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Speichern fehlgeschlagen"
 }
 
+type FormPatch = Partial<SceneForm> | ((prev: SceneForm) => Partial<SceneForm>)
+
 /**
  * Editing state for the selected scene: initialized from draft ?? published
  * on selection, autosaved (1 s debounce) while dirty. Null while nothing
  * (editable) is selected; night scenes have no draft.
+ *
+ * Two races are closed by construction: a save generation guard keeps a
+ * resolving save from clearing edits typed while it was in flight, and
+ * functional patches keep same-tick grid events (drop + layout change)
+ * from overwriting each other.
  */
 export function useSceneForm(
   token: string | null,
@@ -55,6 +62,7 @@ export function useSceneForm(
   const [form, setForm] = useState<SceneForm | null>(null)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const saveSeq = useRef(0)
 
   const scene = scenes?.find((entry) => entry.sceneId === selectedId) ?? null
 
@@ -72,6 +80,8 @@ export function useSceneForm(
     if (!dirty || !token || !selectedId || !form) {
       return
     }
+    saveSeq.current += 1
+    const fired = saveSeq.current
     const timer = window.setTimeout(() => {
       saveDraft({
         token,
@@ -81,7 +91,10 @@ export function useSceneForm(
         widgets: form.widgets,
       }).then(
         () => {
-          setDirty(false)
+          // Another edit may have armed a newer save meanwhile.
+          if (saveSeq.current === fired) {
+            setDirty(false)
+          }
         },
         (e: unknown) => {
           setError(errorMessage(e))
@@ -91,13 +104,30 @@ export function useSceneForm(
     return () => window.clearTimeout(timer)
   }, [dirty, token, selectedId, form, saveDraft])
 
-  const updateForm = useCallback((patch: Partial<SceneForm>) => {
-    setForm((prev) => (prev ? { ...prev, ...patch } : prev))
+  const updateForm = useCallback((patch: FormPatch) => {
+    setForm((prev) => {
+      if (!prev) {
+        return prev
+      }
+      const resolved = typeof patch === "function" ? patch(prev) : patch
+      return { ...prev, ...resolved }
+    })
     setDirty(true)
-    setError(null)
   }, [])
+
+  // Drops local edits and any pending save (after discard/reset/restore),
+  // re-snapping to the passed server state.
+  const revert = useCallback(
+    (rows: SceneRow[] | undefined, id: string | null) => {
+      const current = rows?.find((entry) => entry.sceneId === id) ?? null
+      setForm(current ? snapshotOf(current) : null)
+      setDirty(false)
+      setError(null)
+    },
+    [],
+  )
 
   const status: SaveStatus =
     error !== null ? "error" : dirty ? "saving" : "saved"
-  return { scene, form, updateForm, saveStatus: status, saveError: error }
+  return { scene, form, updateForm, revert, saveStatus: status, saveError: error }
 }
