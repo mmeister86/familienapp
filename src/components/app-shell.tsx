@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Outlet } from "react-router"
+import { Outlet, useLocation } from "react-router"
 import { AppSidebar } from "@/components/app-sidebar"
 import { BottomNav } from "@/components/bottom-nav"
 import { MobileTopBar } from "@/components/mobile-top-bar"
@@ -40,6 +40,9 @@ export function AppShell() {
   const [largeTitleHidden, setLargeTitleHidden] = useState(false)
   const { user } = useSession()
   useShortcuts(user?.role)
+  // The scene builder needs the width: icon-collapse the sidebar there
+  // without touching the user's toggle state (restores on leave).
+  const builderActive = useLocation().pathname === "/layouts"
 
   const pageTitle = useMemo(
     () => ({ largeTitleHidden, setLargeTitleHidden }),
@@ -71,7 +74,7 @@ export function AppShell() {
   return (
     <PageTitleContext.Provider value={pageTitle}>
       <SidebarProvider
-        open={open}
+        open={builderActive ? false : open}
         onOpenChange={(nextOpen) => {
           userToggled.current = true
           setOpen(nextOpen)
