@@ -20,6 +20,7 @@ Read `PLAN.md` before doing anything. It is the source of truth for scope, data 
 - Components: shadcn/ui (Base UI variant) + UIAble via `npx shadcn add @uiable/<component>`. Check UIAble first before building a component yourself.
 - Never use `@uiable-pro`. Replace Next.js imports (`next/link`, `next/image`, `next/navigation`) in pulled components.
 - Phone and laptop are both first-class: check every screen at 390 px, 820 px and 1440 px. Everything must work with mouse + keyboard.
+- Exception: `/layouts` (Scene Builder, Phase 8) is intentionally laptop-only (≥ 1024 px): no phone/tablet layout, no nav entry below that width, direct access redirects silently to `/`. Test only at ≥ 1024 px.
 
 ## Security (non-negotiable)
 - Every public Convex query/mutation takes `token` and calls `requireUser` or `requireParent` first.
