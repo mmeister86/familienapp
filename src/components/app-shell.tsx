@@ -86,7 +86,13 @@ export function AppShell() {
             <MobileTopBar onOpenMore={() => setMoreOpen(true)} />
             <OfflineBanner />
             <div className="flex-1 px-4 pt-2 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-8 lg:px-10">
-              <div className="mx-auto w-full max-w-5xl">
+              <div
+                className={
+                  builderActive
+                    ? "mx-auto w-full"
+                    : "mx-auto w-full max-w-5xl"
+                }
+              >
                 <Outlet />
               </div>
             </div>

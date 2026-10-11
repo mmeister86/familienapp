@@ -1,21 +1,41 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useMutation, useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { useSession } from "@/hooks/useSession"
 import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { DayKind } from "@/lib/scene-schedule"
+import {
+  applyLayoutChange,
+  defaultPropsFor,
+} from "@/lib/scene-layout"
+import type { Layout } from "react-grid-layout/legacy"
 import type { SceneStart } from "../../convex/lib/validators"
+import { SceneCanvas } from "@/components/layouts/scene-canvas"
 import { SceneHeader } from "@/components/layouts/scene-header"
 import { SceneTabs } from "@/components/layouts/scene-tabs"
 import { useSceneForm } from "@/components/layouts/use-scene-form"
+import { WidgetSidebar } from "@/components/layouts/widget-sidebar"
+
+function newWidgetId(existing: readonly string[]): string {
+  let id: string
+  do {
+    id = `w${Math.random().toString(36).slice(2, 8)}`
+  } while (existing.includes(id))
+  return id
+}
 
 export function LayoutsPage() {
   const { token } = useSession()
   const data = useQuery(api.dashboardScenes.list, token ? { token } : "skip")
+  const catalog = useQuery(
+    api.dashboardScenes.catalog,
+    token ? { token } : "skip",
+  )
   const setNightStart = useMutation(api.dashboardScenes.setNightStart)
   const [explicitId, setExplicitId] = useState<string | null>(null)
   const [nightError, setNightError] = useState<string | null>(null)
+  const draggedType = useRef<string | null>(null)
 
   const scenes = data?.scenes
   const selectedId =
@@ -24,7 +44,7 @@ export function LayoutsPage() {
       : (scenes?.[0]?.sceneId ?? null)
   const { scene, form, updateForm } = useSceneForm(token, scenes, selectedId)
 
-  if (!token || !scenes) {
+  if (!token || !scenes || !catalog) {
     return (
       <section>
         <PageHeader
@@ -78,6 +98,32 @@ export function LayoutsPage() {
     updateForm({ start: { ...form.start, [day]: value } })
   }
 
+  const handleLayoutChange = (layout: Layout): void => {
+    if (!form) {
+      return
+    }
+    updateForm({ widgets: applyLayoutChange(form.widgets, layout) })
+  }
+
+  const handleDropWidget = (
+    type: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void => {
+    if (!form || form.widgets.some((widget) => widget.type === type)) {
+      return
+    }
+    const id = newWidgetId(form.widgets.map((widget) => widget.id))
+    updateForm({
+      widgets: [
+        ...form.widgets,
+        { id, type, x, y, w, h, props: defaultPropsFor(type) },
+      ],
+    })
+  }
+
   const barScenes = scenes.flatMap((entry) => {
     if (entry.sceneId === selectedId) {
       const snap =
@@ -125,11 +171,30 @@ export function LayoutsPage() {
         barScenes={barScenes}
         error={nightError}
       />
-      <p className="text-sm text-muted-foreground">
-        {scene.kind === "night"
-          ? "Nacht-Vorschau folgt."
-          : "Raster und Werkzeugleiste folgen."}
-      </p>
+      {scene.kind === "night" ? (
+        <p className="text-sm text-muted-foreground">Nacht-Vorschau folgt.</p>
+      ) : (
+        form !== null && (
+          <div className="flex gap-6">
+            <WidgetSidebar
+              catalog={catalog}
+              placedTypes={form.widgets.map((widget) => widget.type)}
+              onDragStart={(type) => {
+                draggedType.current = type
+              }}
+            />
+            <div className="min-w-0 flex-1">
+              <SceneCanvas
+                widgets={form.widgets}
+                catalog={catalog}
+                draggedTypeRef={draggedType}
+                onLayoutChange={handleLayoutChange}
+                onDropWidget={handleDropWidget}
+              />
+            </div>
+          </div>
+        )
+      )}
     </section>
   )
 }
