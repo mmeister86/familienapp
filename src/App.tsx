@@ -1,8 +1,10 @@
 import { Route, Routes } from "react-router"
 import { AppShell } from "@/components/app-shell"
+import { ParentDesktopOnly } from "@/components/parent-desktop-only"
 import { RequireAuth, SessionErrorBoundary } from "@/components/require-auth"
 import { AnytimePage } from "@/pages/anytime"
 import { ApprovalsPage } from "@/pages/approvals"
+import { LayoutsPage } from "@/pages/layouts"
 import { LoginPage } from "@/pages/login"
 import { NotFoundPage } from "@/pages/not-found"
 import { OverviewPage } from "@/pages/overview"
@@ -32,6 +34,14 @@ export default function App() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/rewards" element={<RewardsPage />} />
           <Route path="/points" element={<PointsPage />} />
+          <Route
+            path="/layouts"
+            element={
+              <ParentDesktopOnly>
+                <LayoutsPage />
+              </ParentDesktopOnly>
+            }
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

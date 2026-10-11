@@ -6,6 +6,7 @@ import {
   Gift,
   Inbox,
   LayoutDashboard,
+  LayoutTemplate,
   ListTodo,
   Trophy,
 } from "lucide-react"
@@ -32,12 +33,15 @@ export type NavItem = {
   group: NavGroup
   /** Roles allowed to see this destination. Omitted = visible to everyone. */
   roles?: NavRole[]
+  /** Visible from laptop width (>= 1024 px) up only. */
+  desktopOnly?: boolean
 }
 
 /**
  * Every destination of the app shell. Parent-only destinations (overview,
- * approvals, tasks) are gated by role; the task lists, rewards and points stay
- * visible to everyone (the points page renders the kid's own history).
+ * approvals, tasks, layouts) are gated by role; the task lists, rewards and
+ * points stay visible to everyone (the points page renders the kid's own
+ * history). Layouts additionally needs laptop width (desktopOnly).
  */
 export const navItems: NavItem[] = [
   {
@@ -65,6 +69,14 @@ export const navItems: NavItem[] = [
     icon: ListTodo,
     group: "manage",
     roles: ["parent"],
+  },
+  {
+    title: "Wand-Szenen",
+    url: "/layouts",
+    icon: LayoutTemplate,
+    group: "manage",
+    roles: ["parent"],
+    desktopOnly: true,
   },
 ]
 
@@ -118,11 +130,14 @@ export function tabItemsFor(role: NavRole | undefined): TabItem[] {
  * The task-list views are excluded because the segmented switcher on the
  * Heute tab already reaches them.
  */
-export function moreItemsFor(role: NavRole | undefined): NavItem[] {
+export function moreItemsFor(
+  role: NavRole | undefined,
+  isLaptop: boolean,
+): NavItem[] {
   const tabUrls = new Set(tabItemsFor(role).map((tab) => tab.url))
   return navItems.filter(
     (item) =>
-      isNavItemVisible(item, role) &&
+      isNavItemVisible(item, role, isLaptop) &&
       !tabUrls.has(item.url) &&
       !(TASK_LIST_URLS as readonly string[]).includes(item.url),
   )
@@ -133,8 +148,12 @@ export function moreItemsFor(role: NavRole | undefined): NavItem[] {
 export function isNavItemVisible(
   item: NavItem,
   role: NavRole | undefined,
+  isLaptop: boolean,
 ): boolean {
   if (role === undefined) {
+    return false
+  }
+  if (item.desktopOnly === true && !isLaptop) {
     return false
   }
   return item.roles === undefined || item.roles.includes(role)

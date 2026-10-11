@@ -2,6 +2,7 @@ import { cn } from "cn"
 import { Ellipsis } from "lucide-react"
 import { Link, useLocation } from "react-router"
 import { useApprovalsCount } from "@/hooks/useApprovalsCount"
+import { useIsLaptop } from "@/hooks/useIsLaptop"
 import { useSession } from "@/hooks/useSession"
 import { isNavItemActive, moreItemsFor, tabItemsFor } from "@/lib/nav"
 
@@ -34,7 +35,8 @@ export function BottomNav({
   const { user } = useSession()
   const approvalsCount = useApprovalsCount()
   const tabs = tabItemsFor(user?.role)
-  const moreActive = moreItemsFor(user?.role).some((item) =>
+  const isLaptop = useIsLaptop()
+  const moreActive = moreItemsFor(user?.role, isLaptop).some((item) =>
     isNavItemActive(item, pathname),
   )
 

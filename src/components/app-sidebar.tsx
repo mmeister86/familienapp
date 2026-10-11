@@ -17,6 +17,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { useApprovalsCount } from "@/hooks/useApprovalsCount"
+import { useIsLaptop } from "@/hooks/useIsLaptop"
 import { useSession } from "@/hooks/useSession"
 import {
   NAV_GROUP_LABELS,
@@ -35,12 +36,13 @@ export function AppSidebar() {
   const navigate = useNavigate()
   const { user, logout } = useSession()
   const approvalsCount = useApprovalsCount()
+  const isLaptop = useIsLaptop()
   // Unknown/loading role renders no destinations (see isNavItemVisible) so
   // parent items never flash to kids while the session resolves.
   const groups = NAV_GROUP_ORDER.map((group) => ({
     group,
     items: navItems.filter(
-      (item) => item.group === group && isNavItemVisible(item, user?.role),
+      (item) => item.group === group && isNavItemVisible(item, user?.role, isLaptop),
     ),
   })).filter((entry) => entry.items.length > 0)
 
