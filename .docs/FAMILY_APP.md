@@ -10,9 +10,11 @@ All requests go **from familydash to Convex** (HTTP actions on the "site" URL, e
 | `POST /ingest/briefing` | wall → app | ingest token                     | `FAMILY_APP_INGEST_TOKEN`    | `INGEST_TOKEN`    |
 | `GET /todos?days=2`     | app → wall | dashboard token                  | `FAMILY_APP_DASHBOARD_TOKEN` | `DASHBOARD_TOKEN` |
 | `GET /dashboard/calendars` | app → wall | calendar token                | `FAMILY_APP_CALENDAR_TOKEN`  | `CALENDAR_DASHBOARD_TOKEN` |
+| `GET /dashboard/scenes` | app → wall | scenes token | `FAMILY_APP_SCENES_TOKEN` | `SCENES_DASHBOARD_TOKEN` |
 
 The calendar token authorizes only `GET /dashboard/calendars` — never ingest, parent functions or the legacy
-dashboard token's endpoints, and vice versa. Calendar rollout order, shadow comparison and rollback live in the
+dashboard token's endpoints, and vice versa. The scenes token authorizes only `GET /dashboard/scenes`, and vice
+versa. Calendar rollout order, shadow comparison and rollback live in the
 dashboard repo (`docs/CONVEX_CALENDAR_ROLLOUT.md`); the canonical v1 fixture both sides test against is
 `tests/fixtures/calendar-feed-v1.json` (byte-identical to the dashboard's `testdata/calendar-feed-v1.json`).
 
@@ -168,3 +170,17 @@ is the role-scoped app-session variant: children see only explicitly assigned pe
 the family stand except child-assigned calendars, and bindings to deleted persons stay hidden from everyone
 (fail closed). Shape details (fields, freshness values, stable ids) mirror the dashboard repo's
 `docs/FAMILY_APP.md` section of the same name; the shared fixture is `tests/fixtures/calendar-feed-v1.json`.
+
+## `GET /dashboard/scenes`
+
+Wall scenes feed (served by `convex/dashboardScenes.ts` via `convex/http.ts`,
+`Cache-Control: no-store`). Only published stands on a fixed 12 cols × 24 rows
+portrait grid, sorted by start time; drafts never reach the wall. `503` while
+unconfigured (seed with `npx convex run dashboardScenes:seedDefaultScenes`).
+The single `kind: "night"` scene carries no `widgets` — the wall renders its
+built-in night view. `revision` counts every publish, night-time change and
+delete; `preview` (when present) wins over the schedule until `until`. Start
+times are `HH:MM` (`null` = the scene does not run on those days); a scene
+runs from its start until the next start the same day. Shape details mirror
+the dashboard repo's `docs/FAMILY_APP.md` section of the same name; the shared
+fixture is `tests/fixtures/dashboard-scenes-v1.json`.

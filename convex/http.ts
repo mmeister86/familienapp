@@ -49,11 +49,28 @@ function isCalendarAuthorized(request: Request): boolean {
   );
 }
 
+// Scene device gate for GET /dashboard/scenes. Dedicated read-only secret
+// like the calendar one: no other token authorizes the scenes feed, and the
+// scenes token authorizes nothing else.
+function isScenesAuthorized(request: Request): boolean {
+  return isAuthorizedHeader(
+    request.headers.get("Authorization"),
+    process.env.SCENES_DASHBOARD_TOKEN,
+  );
+}
+
 // The whole HTTP feed envelope must stay within this bound; larger stands
 // answer 503 and the Go cache keeps serving last-good (Task 5).
 const MAX_CALENDAR_FEED_BYTES = 4 * 1024 * 1024;
 
 function calendarUnavailable(message: string): Response {
+  return new Response(message, {
+    status: 503,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+function scenesUnavailable(message: string): Response {
   return new Response(message, {
     status: 503,
     headers: { "Cache-Control": "no-store" },
@@ -194,6 +211,39 @@ http.route({
       return calendarUnavailable("Calendar feed too large");
     }
     return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    });
+  }),
+});
+
+http.route({
+  path: "/dashboard/scenes",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!isScenesAuthorized(request)) {
+      return unauthorized();
+    }
+    let feed: unknown;
+    try {
+      feed = await ctx.runQuery(internal.dashboardScenes.getScenesFeed, {});
+    } catch (error) {
+      if (
+        error instanceof ConvexError &&
+        typeof error.data === "string" &&
+        error.data.startsWith("ScenesNotConfigured")
+      ) {
+        return scenesUnavailable("Scenes feed not configured");
+      }
+      console.error("familyapp: scenes feed request failed", error);
+      return new Response("Internal error", { status: 500 });
+    }
+    // No byte cap (unlike the calendar feed): at most 8 scenes × 7 widgets
+    // keeps the envelope small by construction.
+    return new Response(JSON.stringify(feed), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
