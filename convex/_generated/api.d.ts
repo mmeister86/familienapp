@@ -14,6 +14,7 @@ import type * as calendarFetch from "../calendarFetch.js";
 import type * as calendarSources from "../calendarSources.js";
 import type * as calendarSync from "../calendarSync.js";
 import type * as crons from "../crons.js";
+import type * as dashboardScenes from "../dashboardScenes.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_access from "../lib/access.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   calendarSources: typeof calendarSources;
   calendarSync: typeof calendarSync;
   crons: typeof crons;
+  dashboardScenes: typeof dashboardScenes;
   http: typeof http;
   ingest: typeof ingest;
   "lib/access": typeof lib_access;
