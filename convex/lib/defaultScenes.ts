@@ -64,7 +64,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
         y: 0,
         w: 6,
         h: 4,
-        props: { wide: false, hints: true },
+        props: { wide: false, hints: false },
       },
       { id: "shopping", type: "shopping", x: 6, y: 0, w: 6, h: 4 },
       { id: "photos", type: "photos", x: 0, y: 4, w: 6, h: 6 },
@@ -85,7 +85,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
         y: 0,
         w: 6,
         h: 4,
-        props: { wide: false, hints: true },
+        props: { wide: false, hints: false },
       },
       { id: "shopping", type: "shopping", x: 6, y: 0, w: 6, h: 4 },
       {
@@ -113,7 +113,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
         y: 0,
         w: 12,
         h: 4,
-        props: { wide: true, hints: true },
+        props: { wide: true, hints: false },
       },
       {
         id: "briefing",

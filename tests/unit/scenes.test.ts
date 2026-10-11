@@ -368,6 +368,16 @@ describe("default scenes seed data", () => {
       DEFAULT_SCENES.map((s) => ({ kind: s.kind, start: s.start })),
     );
   });
+
+  it("shows weather hints only in the morning", () => {
+    for (const scene of DEFAULT_SCENES) {
+      for (const widget of scene.widgets) {
+        if (widget.type === "clock") {
+          expect(widget.props?.hints).toBe(scene.sceneId === "morning");
+        }
+      }
+    }
+  });
 });
 
 describe("dashboard scenes v1 contract fixture", () => {
