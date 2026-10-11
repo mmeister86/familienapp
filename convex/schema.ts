@@ -7,6 +7,8 @@ import {
   examValidator,
   homeworkValidator,
   parentBriefingItemValidator,
+  sceneSnapshotValidator,
+  sceneWidgetValidator,
 } from "./lib/validators";
 
 export default defineSchema({
@@ -281,4 +283,33 @@ export default defineSchema({
     berlinDate: v.string(),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
+
+  // Wall-dashboard scenes (Phase 8). One doc per sceneId; draft is the
+  // unpublished builder state, published is what the wall shows (null = never
+  // published, missing from the feed). The "scenes" key in
+  // familyBackendSettings counts published revisions.
+  dashboardScenes: defineTable({
+    sceneId: v.string(), // stable: seeded ids or "s-" + 6 chars
+    kind: v.union(v.literal("layout"), v.literal("night")),
+    draft: v.union(sceneSnapshotValidator, v.null()),
+    published: v.union(sceneSnapshotValidator, v.null()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_sceneId", ["sceneId"]),
+
+  // Last 10 published stands per layout scene; restoring loads one as draft.
+  dashboardSceneVersions: defineTable({
+    sceneId: v.string(),
+    snapshot: sceneSnapshotValidator,
+    publishedBy: v.optional(v.id("users")),
+    publishedAt: v.number(),
+  }).index("by_scene_publishedAt", ["sceneId", "publishedAt"]),
+
+  // At most one doc: the scene forced onto the wall until `until`.
+  dashboardPreview: defineTable({
+    sceneId: v.string(),
+    widgets: v.array(sceneWidgetValidator),
+    until: v.number(),
+    requestedBy: v.optional(v.id("users")),
+  }),
 });
