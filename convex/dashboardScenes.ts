@@ -3,6 +3,7 @@
 // GET /dashboard/scenes (see ./http.ts). Drafts never reach the wall.
 import { ConvexError, v } from "convex/values";
 import {
+  internalMutation,
   internalQuery,
   mutation,
   query,
@@ -13,7 +14,7 @@ import type { Doc } from "./_generated/dataModel.js";
 import { requireParent } from "./lib/auth";
 import { WIDGET_CATALOG } from "./lib/dashboardWidgets";
 import { todayBerlin } from "./lib/dates";
-import { defaultScene } from "./lib/defaultScenes";
+import { DEFAULT_SCENES, defaultScene } from "./lib/defaultScenes";
 import {
   assertDayTypesCovered,
   assertScheduleCompatible,
@@ -641,5 +642,60 @@ export const getScenesFeed = internalQuery({
             },
           }),
     };
+  },
+});
+
+// One-time setup (and safe to re-run): `npx convex run dashboardScenes:seedDefaultScenes`.
+// Inserts the built-in scenes as published stands so the wall looks unchanged
+// after the switch; existing scenes are never touched.
+export const seedDefaultScenes = internalMutation({
+  args: {},
+  returns: v.object({
+    seeded: v.array(v.string()),
+    skipped: v.array(v.string()),
+    revision: v.number(),
+  }),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const existing = new Set(
+      (await ctx.db.query("dashboardScenes").collect()).map(
+        (scene) => scene.sceneId,
+      ),
+    );
+    const seeded: string[] = [];
+    const skipped: string[] = [];
+    for (const defaults of DEFAULT_SCENES) {
+      if (existing.has(defaults.sceneId)) {
+        skipped.push(defaults.sceneId);
+        continue;
+      }
+      await ctx.db.insert("dashboardScenes", {
+        sceneId: defaults.sceneId,
+        kind: defaults.kind,
+        draft: null,
+        published: {
+          name: defaults.name,
+          start: defaults.start,
+          widgets: [...defaults.widgets],
+        },
+        updatedAt: now,
+      });
+      seeded.push(defaults.sceneId);
+    }
+    const settings = await ctx.db
+      .query("familyBackendSettings")
+      .withIndex("by_key", (q) => q.eq("key", SCENES_SETTINGS_KEY))
+      .unique();
+    if (settings === null) {
+      await ctx.db.insert("familyBackendSettings", {
+        key: SCENES_SETTINGS_KEY,
+        configurationRevision: 1,
+        configured: true,
+        berlinDate: todayBerlin(),
+        updatedAt: now,
+      });
+      return { seeded, skipped, revision: 1 };
+    }
+    return { seeded, skipped, revision: settings.configurationRevision };
   },
 });

@@ -790,3 +790,78 @@ describe("list and catalog", () => {
     });
   });
 });
+
+describe("seedDefaultScenes", () => {
+  it("seeds the five current scenes as published on an empty database", async () => {
+    const t = setupCalendarTest();
+
+    const result = await t.mutation(
+      internal.dashboardScenes.seedDefaultScenes,
+      {},
+    );
+    expect(result.seeded.sort()).toEqual([
+      "afternoon",
+      "day",
+      "evening",
+      "morning",
+      "night",
+    ]);
+    expect(result.skipped).toEqual([]);
+    expect(result.revision).toBe(1);
+
+    const parent = await createParentSession(t);
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    expect(listed.revision).toBe(1);
+    expect(listed.scenes.map((s) => s.sceneId)).toEqual([
+      "morning",
+      "day",
+      "afternoon",
+      "evening",
+      "night",
+    ]);
+    for (const scene of listed.scenes) {
+      expect(scene.draft).toBeNull();
+      expect(scene.published).not.toBeNull();
+    }
+
+    const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
+    expect(feed.version).toBe(1);
+    expect(feed.grid).toEqual({ cols: 12, rows: 24 });
+    expect(feed.revision).toBe(1);
+    expect(feed.scenes).toHaveLength(5);
+    const night = feed.scenes.find((s) => s.id === "night");
+    expect(night).toBeDefined();
+    expect("widgets" in night!).toBe(false);
+    const morning = feed.scenes.find((s) => s.id === "morning");
+    expect(morning?.widgets).toHaveLength(5);
+  });
+
+  it("skips existing scenes and keeps their content and revision", async () => {
+    const t = setupCalendarTest();
+    await insertLayout(t, { name: "Umgebaut" });
+    await insertSettings(t, 5);
+
+    const result = await t.mutation(
+      internal.dashboardScenes.seedDefaultScenes,
+      {},
+    );
+    expect(result.seeded.sort()).toEqual([
+      "afternoon",
+      "day",
+      "evening",
+      "night",
+    ]);
+    expect(result.skipped).toEqual(["morning"]);
+    expect(result.revision).toBe(5);
+
+    const parent = await createParentSession(t);
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    expect(listed.revision).toBe(5);
+    const morning = listed.scenes.find((s) => s.sceneId === "morning");
+    expect(morning?.published?.name).toBe("Umgebaut");
+  });
+});
