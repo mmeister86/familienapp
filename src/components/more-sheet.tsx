@@ -5,6 +5,7 @@ import { ListButtonRow, ListGroup, ListLinkRow } from "@/components/list"
 import { NotificationSettingsGroup } from "@/components/notification-settings"
 import { ResponsiveDialog } from "@/components/responsive-dialog"
 import { useApprovalsCount } from "@/hooks/useApprovalsCount"
+import { useIsLaptop } from "@/hooks/useIsLaptop"
 import { useSession } from "@/hooks/useSession"
 import { moreItemsFor } from "@/lib/nav"
 
@@ -22,7 +23,8 @@ export function MoreSheet({
   const navigate = useNavigate()
   const { user, logout } = useSession()
   const approvalsCount = useApprovalsCount()
-  const items = moreItemsFor(user?.role)
+  const isLaptop = useIsLaptop()
+  const items = moreItemsFor(user?.role, isLaptop)
 
   const close = (): void => onOpenChange(false)
 

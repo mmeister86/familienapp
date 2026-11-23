@@ -1,0 +1,133 @@
+import { useCallback, useEffect, useRef, useState } from "react"
+import { useMutation } from "convex/react"
+import type { FunctionReturnType } from "convex/server"
+import { api } from "../../../convex/_generated/api"
+import type {
+  SceneStart,
+  SceneWidget,
+} from "../../../convex/lib/validators"
+
+export type ScenesList = FunctionReturnType<typeof api.dashboardScenes.list>
+export type SceneRow = ScenesList["scenes"][number]
+
+export type SceneForm = {
+  name: string
+  start: SceneStart
+  widgets: SceneWidget[]
+}
+
+export type SaveStatus = "saved" | "saving" | "error"
+
+function snapshotOf(scene: SceneRow): SceneForm | null {
+  if (scene.kind === "night") {
+    return null
+  }
+  const snap = scene.draft ?? scene.published
+  if (!snap) {
+    return null
+  }
+  return { name: snap.name, start: { ...snap.start }, widgets: snap.widgets }
+}
+
+export function errorMessage(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "data" in error &&
+    typeof error.data === "string"
+  ) {
+    return error.data
+  }
+  return error instanceof Error ? error.message : "Speichern fehlgeschlagen"
+}
+
+type FormPatch = Partial<SceneForm> | ((prev: SceneForm) => Partial<SceneForm>)
+
+/**
+ * Editing state for the selected scene: initialized from draft ?? published
+ * on selection, autosaved (1 s debounce) while dirty. Null while nothing
+ * (editable) is selected; night scenes have no draft.
+ *
+ * Two races are closed by construction: a save generation guard keeps a
+ * resolving save from clearing edits typed while it was in flight, and
+ * functional patches keep same-tick grid events (drop + layout change)
+ * from overwriting each other.
+ */
+export function useSceneForm(
+  token: string | null,
+  scenes: SceneRow[] | undefined,
+  selectedId: string | null,
+) {
+  const saveDraft = useMutation(api.dashboardScenes.saveDraft)
+  const [form, setForm] = useState<SceneForm | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const saveSeq = useRef(0)
+
+  const scene = scenes?.find((entry) => entry.sceneId === selectedId) ?? null
+
+  // Reset on selection change (React's "adjust state when props change"
+  // pattern, like the task editor): query updates while dirty never wipe
+  // in-progress edits.
+  const [session, setSession] = useState({ selectedId, scene })
+  if (session.selectedId !== selectedId || (session.scene !== scene && !dirty)) {
+    setSession({ selectedId, scene })
+    setForm(scene ? snapshotOf(scene) : null)
+    setDirty(false)
+  }
+
+  useEffect(() => {
+    if (!dirty || !token || !selectedId || !form) {
+      return
+    }
+    saveSeq.current += 1
+    const fired = saveSeq.current
+    const timer = window.setTimeout(() => {
+      saveDraft({
+        token,
+        sceneId: selectedId,
+        name: form.name,
+        start: form.start,
+        widgets: form.widgets,
+      }).then(
+        () => {
+          // Another edit may have armed a newer save meanwhile.
+          if (saveSeq.current === fired) {
+            setDirty(false)
+          }
+        },
+        (e: unknown) => {
+          setError(errorMessage(e))
+        },
+      )
+    }, 1000)
+    return () => window.clearTimeout(timer)
+  }, [dirty, token, selectedId, form, saveDraft])
+
+  const updateForm = useCallback((patch: FormPatch) => {
+    setForm((prev) => {
+      if (!prev) {
+        return prev
+      }
+      const resolved = typeof patch === "function" ? patch(prev) : patch
+      return { ...prev, ...resolved }
+    })
+    setDirty(true)
+  }, [])
+
+  // Drops local edits and any pending save (after discard/reset/restore),
+  // re-snapping to the passed server state.
+  const revert = useCallback(
+    (rows: SceneRow[] | undefined, id: string | null) => {
+      const current = rows?.find((entry) => entry.sceneId === id) ?? null
+      setForm(current ? snapshotOf(current) : null)
+      setDirty(false)
+      setError(null)
+    },
+    [],
+  )
+
+  const status: SaveStatus =
+    error !== null ? "error" : dirty ? "saving" : "saved"
+  return { scene, form, updateForm, revert, saveStatus: status, saveError: error }
+}

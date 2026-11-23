@@ -175,6 +175,11 @@ export function ChildDayCard({
   )
   const stale = isStale(snapshot.sourceUpdatedAt, now)
 
+  // No school (weekends/holidays – the timetable is empty there): the lunch
+  // section is hidden unless something was actually ordered.
+  const showMeal =
+    day.timetable.length > 0 || (day.meal?.ordered ?? false);
+
   return (
     <section
       aria-label={`Tag von ${name}`}
@@ -251,23 +256,25 @@ export function ChildDayCard({
         <EventsList day={day} />
       </Section>
 
-      <Section title="Essen" icon={<UtensilsCrossed />}>
-        {day.meal === undefined ? (
-          <EmptyLine>Kein Essen.</EmptyLine>
-        ) : day.meal.ordered ? (
-          <p className="text-[0.9375rem]">
-            <span className="font-medium">{day.meal.title ?? "Bestellt"}</span>
-            {day.meal.description ? (
-              <span className="text-muted-foreground">
-                {" "}
-                {day.meal.description}
-              </span>
-            ) : null}
-          </p>
-        ) : (
-          <p className="text-sm font-medium text-warning">Nichts bestellt.</p>
-        )}
-      </Section>
+      {showMeal ? (
+        <Section title="Essen" icon={<UtensilsCrossed />}>
+          {day.meal === undefined ? (
+            <EmptyLine>Kein Essen.</EmptyLine>
+          ) : day.meal.ordered ? (
+            <p className="text-[0.9375rem]">
+              <span className="font-medium">{day.meal.title ?? "Bestellt"}</span>
+              {day.meal.description ? (
+                <span className="text-muted-foreground">
+                  {" "}
+                  {day.meal.description}
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-sm font-medium text-warning">Nichts bestellt.</p>
+          )}
+        </Section>
+      ) : null}
 
       <Section title="Hausaufgaben" icon={<NotebookPen />}>
         {homework.length === 0 ? (
