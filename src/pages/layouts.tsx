@@ -438,6 +438,7 @@ export function LayoutsPage() {
             />
             <div className="min-w-0 flex-1">
               <FreeCanvas
+                key={selectedId}
                 widgets={form.widgets}
                 catalog={catalog}
                 draggedTypeRef={draggedType}

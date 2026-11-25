@@ -1,9 +1,20 @@
 import { createElement, type PointerEvent, type ReactNode } from "react"
+import { motion, useReducedMotion, type Transition } from "motion/react"
 import { cn } from "cn"
 import { Repeat } from "lucide-react"
 import type { Edge } from "@/lib/canvas-ops"
 import type { CatalogEntry } from "@/lib/scene-layout"
 import type { SceneWidget } from "../../../convex/lib/validators"
+import type { GridBox } from "./canvas-pointer"
+import {
+  ENTER_SCALE,
+  ENTER_SECONDS,
+  EXIT_SECONDS,
+  INSTANT,
+  LIFT_SCALE,
+  LIFT_SECONDS,
+  TILE_SPRING,
+} from "./canvas-motion"
 import { widgetIcon } from "./widget-icons"
 import { TileSettings } from "./tile-settings"
 
@@ -30,7 +41,9 @@ const HANDLES: readonly Handle[] = [
 export function CanvasTile({
   widget,
   catalog,
-  active,
+  box,
+  lifted,
+  raised,
   onMoveStart,
   onResizeStart,
   onKeyDown,
@@ -39,8 +52,12 @@ export function CanvasTile({
 }: {
   widget: SceneWidget
   catalog: readonly CatalogEntry[]
-  /** True while this tile is being dragged. */
-  active: boolean
+  /** Pixel rectangle inside the grid area; changes glide with the shared spring. */
+  box: GridBox
+  /** True while the tile is dragged by its body: follows the pointer, lifted. */
+  lifted: boolean
+  /** Stays above its neighbours while it glides into its slot after a drag. */
+  raised: boolean
   onMoveStart: (event: PointerEvent<HTMLElement>, widget: SceneWidget) => void
   onResizeStart: (
     event: PointerEvent<HTMLElement>,
@@ -59,8 +76,19 @@ export function CanvasTile({
       : (catalog.find((entry) => entry.type === widget.fallback)?.name ??
         widget.fallback)
 
+  const reduced = useReducedMotion() === true
+  const transition: Transition = reduced
+    ? INSTANT
+    : lifted
+      ? { default: INSTANT, scale: { duration: LIFT_SECONDS, ease: "easeOut" } }
+      : {
+          default: TILE_SPRING,
+          opacity: { duration: ENTER_SECONDS, ease: "easeOut" },
+          scale: { duration: ENTER_SECONDS, ease: "easeOut" },
+        }
+
   return (
-    <div
+    <motion.div
       tabIndex={0}
       role="group"
       aria-label={`${name}, Spalte ${widget.x + 1}, Zeile ${widget.y + 1}, ${widget.w} × ${widget.h}`}
@@ -79,12 +107,18 @@ export function CanvasTile({
       onKeyDown={(event) => onKeyDown(event, widget)}
       className={cn(
         "group relative touch-none rounded-xl border border-border bg-card p-3 select-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active ? "z-10 cursor-grabbing shadow-lg" : "cursor-grab",
+        "absolute transition-shadow duration-200",
+        raised && "z-10",
+        lifted ? "cursor-grabbing shadow-lg" : "cursor-grab",
       )}
-      style={{
-        gridColumn: `${widget.x + 1} / span ${widget.w}`,
-        gridRow: `${widget.y + 1} / span ${widget.h}`,
+      initial={reduced ? false : { ...box, opacity: 0, scale: ENTER_SCALE }}
+      animate={{ ...box, opacity: 1, scale: lifted ? LIFT_SCALE : 1 }}
+      exit={{
+        opacity: 0,
+        scale: ENTER_SCALE,
+        transition: reduced ? INSTANT : { duration: EXIT_SECONDS, ease: "easeOut" },
       }}
+      transition={transition}
     >
       {HANDLES.map((handle) => (
         <div
@@ -129,6 +163,6 @@ export function CanvasTile({
         onUpdate={onUpdateWidget}
         onRemove={onRemoveWidget}
       />
-    </div>
+    </motion.div>
   )
 }

@@ -1,10 +1,10 @@
+import { lazy, Suspense } from "react"
 import { Route, Routes } from "react-router"
 import { AppShell } from "@/components/app-shell"
 import { ParentDesktopOnly } from "@/components/parent-desktop-only"
 import { RequireAuth, SessionErrorBoundary } from "@/components/require-auth"
 import { AnytimePage } from "@/pages/anytime"
 import { ApprovalsPage } from "@/pages/approvals"
-import { LayoutsPage } from "@/pages/layouts"
 import { LoginPage } from "@/pages/login"
 import { NotFoundPage } from "@/pages/not-found"
 import { OverviewPage } from "@/pages/overview"
@@ -13,6 +13,11 @@ import { RewardsPage } from "@/pages/rewards"
 import { TasksPage } from "@/pages/tasks"
 import { TodayPage } from "@/pages/today"
 import { UpcomingPage } from "@/pages/upcoming"
+
+// The scene builder (and the animation library it uses) is only for the laptop-only /layouts route.
+const LayoutsPage = lazy(() =>
+  import("@/pages/layouts").then((module) => ({ default: module.LayoutsPage })),
+)
 
 export default function App() {
   return (
@@ -38,7 +43,9 @@ export default function App() {
             path="/layouts"
             element={
               <ParentDesktopOnly>
-                <LayoutsPage />
+                <Suspense fallback={null}>
+                  <LayoutsPage />
+                </Suspense>
               </ParentDesktopOnly>
             }
           />

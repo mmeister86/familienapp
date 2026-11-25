@@ -1,5 +1,8 @@
+import { AnimatePresence } from "motion/react"
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -23,8 +26,15 @@ import {
 } from "@/lib/canvas-ops"
 import type { CatalogEntry } from "@/lib/scene-layout"
 import type { SceneWidget } from "../../../convex/lib/validators"
-import { deltaCells, pointToGrid } from "./canvas-pointer"
-import { PreviewOutline } from "./canvas-preview"
+import { SETTLE_MS } from "./canvas-motion"
+import {
+  clampOffset,
+  deltaCells,
+  pointToGrid,
+  rectToBox,
+  type GridBox,
+} from "./canvas-pointer"
+import { PreviewOutline, type Outline } from "./canvas-preview"
 import { CanvasTile } from "./canvas-tile"
 
 const GAP_PX = 6
@@ -39,14 +49,20 @@ type Drag = {
   py: number
 }
 
+type Slot = { rect: Rect; tone: "ok" | "blocked"; label?: string }
+
 type Live = {
   id: string
   widgets: SceneWidget[]
-  /** Red outline: where the tile does not fit; labelled when a split was refused. */
-  blocked: { rect: Rect; label?: string } | null
-  /** Green outline: the part a moved tile takes when it splits another tile. */
-  split: { rect: Rect; type: string } | null
+  /** Where a release would put the tile: green, or red when it does not fit (labelled when a split was refused). */
+  slot: Slot | null
+  /** Pixel box of a tile dragged by its body: follows the pointer, kept inside the sheet. */
+  dragBox: GridBox | null
+  /** True when releasing here changes nothing (blocked). */
+  blocked: boolean
 }
+
+type Area = { width: number; height: number }
 
 type DropHover = { type: string; plan: DropPlan; point: { x: number; y: number } }
 
@@ -99,7 +115,39 @@ export function FreeCanvas({
   const dragRef = useRef<Drag | null>(null)
   const [live, setLive] = useState<Live | null>(null)
   const [hover, setHover] = useState<DropHover | null>(null)
+  const [area, setArea] = useState<Area | null>(null)
+  const [raised, setRaised] = useState<string | null>(null)
+  const lowerTimer = useRef<number | undefined>(undefined)
   const dragging = live !== null
+
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid) {
+      return
+    }
+    const measure = (): void => {
+      const next = { width: grid.clientWidth, height: grid.clientHeight }
+      setArea((prev) =>
+        prev !== null && prev.width === next.width && prev.height === next.height
+          ? prev
+          : next,
+      )
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(grid)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => () => window.clearTimeout(lowerTimer.current), [])
+
+  /** Ends a drag without applying anything; the tile keeps its stacking while it glides. */
+  const endDrag = useCallback((): void => {
+    dragRef.current = null
+    setLive(null)
+    window.clearTimeout(lowerTimer.current)
+    lowerTimer.current = window.setTimeout(() => setRaised(null), SETTLE_MS)
+  }, [])
 
   useEffect(() => {
     if (!dragging) {
@@ -107,13 +155,12 @@ export function FreeCanvas({
     }
     const cancel = (event: globalThis.KeyboardEvent): void => {
       if (event.key === "Escape") {
-        dragRef.current = null
-        setLive(null)
+        endDrag()
       }
     }
     window.addEventListener("keydown", cancel)
     return () => window.removeEventListener("keydown", cancel)
-  }, [dragging])
+  }, [dragging, endDrag])
 
   const nameOf = (type: string): string =>
     catalog.find((entry) => entry.type === type)?.name ?? type
@@ -184,7 +231,7 @@ export function FreeCanvas({
     const box = gridRef.current?.getBoundingClientRect()
     const tile = drag.start.find((t) => t.id === drag.id)
     if (!box || !tile) {
-      return { id: drag.id, widgets: drag.start, blocked: null, split: null }
+      return { id: drag.id, widgets: drag.start, slot: null, dragBox: null, blocked: false }
     }
     const dx = deltaCells(drag.px, event.clientX, box.width / GRID.cols)
     const dy = deltaCells(drag.py, event.clientY, box.height / GRID.rows)
@@ -192,9 +239,23 @@ export function FreeCanvas({
       return {
         id: drag.id,
         widgets: resizeTile(drag.start, drag.id, drag.edges, { dx, dy }, minima),
-        blocked: null,
-        split: null,
+        slot: null,
+        dragBox: null,
+        blocked: false,
       }
+    }
+    const areaPx = { width: box.width, height: box.height }
+    const startBox = rectToBox(tile, GAP_PX, areaPx)
+    const offset = clampOffset(
+      startBox,
+      event.clientX - drag.px,
+      event.clientY - drag.py,
+      areaPx,
+    )
+    const dragBox: GridBox = {
+      ...startBox,
+      left: startBox.left + offset.dx,
+      top: startBox.top + offset.dy,
     }
     const point = pointToGrid(event.clientX, event.clientY, box)
     const plan = planMove(
@@ -213,16 +274,24 @@ export function FreeCanvas({
       return {
         id: drag.id,
         widgets: drag.start,
-        blocked: refusedSplit ? { rect: plan.rect, label: "Kein Platz" } : { rect: plan.rect },
-        split: null,
+        slot: {
+          rect: plan.rect,
+          tone: "blocked",
+          ...(refusedSplit ? { label: "Kein Platz" } : {}),
+        },
+        dragBox,
+        blocked: true,
       }
     }
-    return {
-      id: drag.id,
-      widgets: plan.widgets,
-      blocked: null,
-      split: plan.kind === "split" ? { rect: plan.added, type: tile.type } : null,
-    }
+    const landed = plan.widgets.find((t) => t.id === drag.id)
+    const slot: Slot | null =
+      plan.kind === "split"
+        ? { rect: plan.added, tone: "ok", label: nameOf(tile.type) }
+        : landed !== undefined &&
+            (landed.x !== tile.x || landed.y !== tile.y)
+          ? { rect: landed, tone: "ok" }
+          : null
+    return { id: drag.id, widgets: plan.widgets, slot, dragBox, blocked: false }
   }
 
   const begin = (
@@ -241,13 +310,14 @@ export function FreeCanvas({
       px: event.clientX,
       py: event.clientY,
     }
-    setLive({ id: widget.id, widgets, blocked: null, split: null })
+    if (edges === null) {
+      window.clearTimeout(lowerTimer.current)
+      setRaised(widget.id)
+    }
+    setLive({ id: widget.id, widgets, slot: null, dragBox: null, blocked: false })
   }
 
-  const onPointerCancel = (): void => {
-    dragRef.current = null
-    setLive(null)
-  }
+  const onPointerCancel = (): void => endDrag()
 
   const onPointerMove = (event: PointerEvent): void => {
     const drag = dragRef.current
@@ -267,10 +337,9 @@ export function FreeCanvas({
     if (!drag) {
       return
     }
-    dragRef.current = null
     const result = compute(drag, event)
-    setLive(null)
-    if (result.blocked === null && !sameLayout(result.widgets, drag.start)) {
+    endDrag()
+    if (!result.blocked && !sameLayout(result.widgets, drag.start)) {
       onChange(result.widgets)
     }
   }
@@ -327,6 +396,31 @@ export function FreeCanvas({
   const shown: SceneWidget[] =
     live?.widgets ?? splitLayout?.filter((t) => t.id !== PREVIEW_ID) ?? widgets
 
+  const dropSlot: Slot | null =
+    drop === null
+      ? null
+      : drop.plan.kind === "blocked"
+        ? {
+            rect: {
+              x: Math.min(Math.floor(drop.point.x), GRID.cols - 1),
+              y: Math.min(Math.floor(drop.point.y), GRID.rows - 1),
+              w: 1,
+              h: 1,
+            },
+            tone: "blocked",
+            label: "Kein Platz",
+          }
+        : { rect: drop.plan.added, tone: "ok", label: nameOf(drop.type) }
+  const slot = live !== null ? live.slot : dropSlot
+  const outline: Outline | null =
+    slot !== null && area !== null
+      ? {
+          box: rectToBox(slot.rect, GAP_PX, area),
+          tone: slot.tone,
+          ...(slot.label !== undefined ? { label: slot.label } : {}),
+        }
+      : null
+
   const gridStyle = {
     display: "grid",
     gridTemplateColumns: `repeat(${GRID.cols}, minmax(0, 1fr))`,
@@ -340,7 +434,7 @@ export function FreeCanvas({
         <div
           ref={gridRef}
           tabIndex={-1}
-          className="absolute inset-x-0 top-0 h-[97.5%] outline-none"
+          className={`absolute inset-x-0 top-0 h-[97.5%] outline-none${dragging ? " select-none" : ""}`}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
@@ -353,49 +447,33 @@ export function FreeCanvas({
               <div key={i} className="rounded-sm border border-dashed border-muted-foreground/25" />
             ))}
           </div>
-          <div className="absolute inset-0" style={gridStyle}>
-            {shown.map((widget) => (
-              <CanvasTile
-                key={widget.id}
-                widget={widget}
-                catalog={catalog}
-                active={live?.id === widget.id}
-                onMoveStart={(event, w) => begin(event, w, null)}
-                onResizeStart={begin}
-                onKeyDown={onTileKeyDown}
-                onUpdateWidget={onUpdateWidget}
-                onRemoveWidget={removeFromPopover}
-              />
-            ))}
-            {live?.blocked != null && (
-              <PreviewOutline
-                rect={live.blocked.rect}
-                tone="blocked"
-                label={live.blocked.label}
-              />
-            )}
-            {live?.split != null && (
-              <PreviewOutline
-                rect={live.split.rect}
-                tone="ok"
-                label={nameOf(live.split.type)}
-              />
-            )}
-            {drop !== null && drop.plan.kind !== "blocked" && (
-              <PreviewOutline rect={drop.plan.added} tone="ok" label={nameOf(drop.type)} />
-            )}
-            {drop !== null && drop.plan.kind === "blocked" && (
-              <PreviewOutline
-                rect={{
-                  x: Math.min(Math.floor(drop.point.x), GRID.cols - 1),
-                  y: Math.min(Math.floor(drop.point.y), GRID.rows - 1),
-                  w: 1,
-                  h: 1,
-                }}
-                tone="blocked"
-                label="Kein Platz"
-              />
-            )}
+          <div className="absolute inset-0">
+            <AnimatePresence initial={false}>
+              {area !== null &&
+                shown.map((widget) => {
+                  const lifted = live?.id === widget.id && live.dragBox !== null
+                  return (
+                    <CanvasTile
+                      key={widget.id}
+                      widget={widget}
+                      catalog={catalog}
+                      box={
+                        lifted && live.dragBox !== null
+                          ? live.dragBox
+                          : rectToBox(widget, GAP_PX, area)
+                      }
+                      lifted={lifted}
+                      raised={raised === widget.id}
+                      onMoveStart={(event, w) => begin(event, w, null)}
+                      onResizeStart={begin}
+                      onKeyDown={onTileKeyDown}
+                      onUpdateWidget={onUpdateWidget}
+                      onRemoveWidget={removeFromPopover}
+                    />
+                  )
+                })}
+            </AnimatePresence>
+            <PreviewOutline outline={outline} />
           </div>
         </div>
         <div className="absolute inset-x-0 bottom-0 flex h-[2.5%] items-center justify-center bg-muted text-[10px] text-muted-foreground">
