@@ -168,7 +168,8 @@ PINs, session tokens or raw responses anywhere in the output. `generatedAt` is f
 freshness; per-source `lastSuccessAt`/`coverage` belong to the published generation. `calendar.forUser(token)`
 is the role-scoped app-session variant: children see only explicitly assigned personal calendars, parents keep
 the family stand except child-assigned calendars, and bindings to deleted persons stay hidden from everyone
-(fail closed). Shape details (fields, freshness values, stable ids) mirror the dashboard repo's
+(fail closed). Each entry of `people` carries `color` (`#RRGGBB`) when the stored colour matches that pattern;
+otherwise the key is omitted (the wall ignores anything else and works without it). Shape details (fields, freshness values, stable ids) mirror the dashboard repo's
 `docs/FAMILY_APP.md` section of the same name; the shared fixture is `tests/fixtures/calendar-feed-v1.json`.
 
 ## `GET /dashboard/scenes`

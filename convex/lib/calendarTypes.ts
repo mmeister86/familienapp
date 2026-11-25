@@ -95,6 +95,8 @@ export type CalendarFeedPerson = {
   slug: string;
   name: string;
   role: "parent" | "child";
+  // Only present for stored #RRGGBB values; the wall ignores anything else.
+  color?: string;
 };
 
 export type CalendarFeedBinding = {

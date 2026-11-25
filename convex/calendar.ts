@@ -30,6 +30,9 @@ import {
   calendarFeedV1Validator,
 } from "./lib/calendarValidators.js";
 
+// The wall accepts only #RRGGBB; other stored values are left out of the feed.
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 export const CALENDAR_NOT_CONFIGURED = "CalendarNotConfigured";
 
 function notConfigured(): never {
@@ -185,6 +188,7 @@ async function buildFeed(
       slug: user.slug,
       name: user.name,
       role: user.role,
+      ...(HEX_COLOR.test(user.color) ? { color: user.color } : {}),
     })),
     bindings: bindings.map((binding) => ({
       personId: binding.userId as string,

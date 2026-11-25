@@ -55,6 +55,7 @@ export const calendarFeedPersonValidator = v.object({
   slug: v.string(),
   name: v.string(),
   role: v.union(v.literal("parent"), v.literal("child")),
+  color: v.optional(v.string()),
 });
 
 export const calendarFeedBindingValidator = v.object({
