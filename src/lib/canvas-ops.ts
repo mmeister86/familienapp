@@ -311,6 +311,8 @@ const EDGE: Record<Edge, { axis: Axis; outward: 1 | -1; horizontal: boolean }> =
   n: { axis: "y", outward: -1, horizontal: false },
 }
 
+const ORDER: readonly Edge[] = ["e", "w", "s", "n"]
+
 const lenKey = { x: "w", y: "h" } as const
 const crossOf = { x: "y", y: "x" } as const
 
@@ -372,7 +374,10 @@ function growEdge(
   const { axis, outward } = EDGE[edge]
   const len = lenKey[axis]
   const cross = crossOf[axis]
-  const tile = widgets.find((t) => t.id === id)!
+  const tile = widgets.find((t) => t.id === id)
+  if (!tile) {
+    return [...widgets]
+  }
   const [start, end] = extent(tile, axis)
   const [crossStart, crossEnd] = extent(tile, cross)
   const line = outward > 0 ? end + k : start - k
@@ -447,7 +452,9 @@ function followersOf(
 
 /**
  * Move edges of a tile by the pointer delta (cells, right/down positive),
- * computed from the layout at drag start. Growing shrinks the tiles in the
+ * computed from the layout at drag start. Edges are applied in the order e, w, s, n, each
+ * deciding pushes and followers from the layout the previous edge left.
+ * Never returns an invalid layout (falls back to the input). Growing shrinks the tiles in the
  * way down to their minimum; shrinking lets flush neighbours follow.
  */
 export function resizeTile(
@@ -457,15 +464,18 @@ export function resizeTile(
   delta: { dx: number; dy: number },
   minima: Minima,
 ): SceneWidget[] {
-  const start = widgets.find((t) => t.id === id)
-  if (!start) {
+  if (!widgets.some((t) => t.id === id)) {
     return [...widgets]
   }
   let current: SceneWidget[] = [...widgets]
-  for (const edge of new Set(edges)) {
+  // fixed order, independent of how the caller lists them: horizontal first
+  for (const edge of ORDER.filter((e) => edges.includes(e))) {
     const { axis, outward, horizontal } = EDGE[edge]
     const growth = Math.trunc(horizontal ? delta.dx : delta.dy) * outward
-    const tile = current.find((t) => t.id === id)!
+    const tile = current.find((t) => t.id === id)
+    if (!tile) {
+      return [...widgets]
+    }
     if (growth > 0) {
       const k = feasibleGrowth(current, tile, edge, growth, minima)
       if (k > 0) {
@@ -476,11 +486,11 @@ export function resizeTile(
       const minLen = horizontal ? min.minW : min.minH
       const k = Math.min(-growth, tile[lenKey[axis]] - minLen)
       if (k > 0) {
-        current = shrinkEdge(current, id, edge, k, followersOf(widgets, start, edge))
+        current = shrinkEdge(current, id, edge, k, followersOf(current, tile, edge))
       }
     }
   }
-  return current
+  return isValidLayout(current, minima) ? current : [...widgets]
 }
 
 /** Remove a tile and let the tiles of one fully flush side grow into the gap. */

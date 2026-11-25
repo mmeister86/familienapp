@@ -441,6 +441,42 @@ describe("resizeTile shrinking", () => {
   });
 });
 
+describe("resizeTile corners", () => {
+  it("decides the second edge's followers from the layout after the first", () => {
+    const l = [
+      w("a", "tile", 0, 0, 6, 5),
+      w("c", "tile", 6, 0, 6, 5),
+      w("b", "tile", 0, 5, 6, 5),
+    ];
+    const out = resize(l, "a", ["s", "e"], -2, -2);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 3]);
+    expect(rect(out, "c")).toEqual([4, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([0, 5, 6, 5]);
+  });
+  it("mirrors for west and north", () => {
+    const l = [
+      w("a", "tile", 6, 5, 6, 5),
+      w("l", "tile", 0, 5, 6, 5),
+      w("t", "tile", 6, 0, 6, 5),
+    ];
+    const out = resize(l, "a", ["w", "n"], 2, 2);
+    expect(rect(out, "a")).toEqual([8, 7, 4, 3]);
+    expect(rect(out, "l")).toEqual([0, 5, 8, 5]);
+    expect(rect(out, "t")).toEqual([6, 0, 6, 5]);
+  });
+  it("mixes growing and shrinking", () => {
+    const l = [
+      w("a", "tile", 0, 0, 6, 5),
+      w("c", "tile", 6, 0, 6, 5),
+      w("b", "clock", 0, 5, 6, 6),
+    ];
+    const out = resize(l, "a", ["e", "s"], -2, 2);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 7]);
+    expect(rect(out, "c")).toEqual([4, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([0, 7, 6, 4]);
+  });
+});
+
 describe("removeTile", () => {
   it("fills with the single flush neighbour", () => {
     const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 5)];
@@ -517,9 +553,13 @@ describe("random operations keep the layout valid", () => {
   };
   for (const [name, start] of Object.entries(starts)) {
     it(`from ${name}`, () => {
-      const rnd = seeded(12345);
+     for (const seed of [1, 2, 3, 12345, 987654]) {
+      const rnd = seeded(seed);
       const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
-      const edgeSets: Edge[][] = [["n"], ["e"], ["s"], ["w"], ["s", "e"], ["n", "w"]];
+      const edgeSets: Edge[][] = [
+        ["n"], ["e"], ["s"], ["w"],
+        ["s", "e"], ["n", "w"], ["n", "e"], ["s", "w"],
+      ];
       let layout = start();
       expect(isValidLayout(layout, minima)).toBe(true);
       for (let i = 0; i < 300; i++) {
@@ -549,6 +589,7 @@ describe("random operations keep the layout valid", () => {
           layout = next;
         }
       }
+     }
     });
   }
 });
