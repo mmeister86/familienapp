@@ -355,12 +355,12 @@
 }
 
 .canvas-tile:is(:hover, :focus-within) {
-  --tile-glow: 0 0 22px 0 color-mix(in srgb, var(--ring) 55%, transparent);
-  border-color: color-mix(in srgb, var(--ring) 75%, transparent);
+  --tile-glow: 0 0 18px 0 color-mix(in srgb, var(--ring) 28%, transparent);
+  border-color: color-mix(in srgb, var(--ring) 50%, transparent);
 }
 
 .canvas-tile:focus-visible {
-  --tile-glow: 0 0 26px 2px color-mix(in srgb, var(--ring) 80%, transparent);
+  --tile-glow: 0 0 20px 1px color-mix(in srgb, var(--ring) 42%, transparent);
   border-color: var(--ring);
 }
 
