@@ -255,6 +255,8 @@ export function FreeCanvas({
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault()
       onRemoveWidget(widget.id)
+      // The focused tile is about to vanish; keep keyboard users in the canvas.
+      gridRef.current?.focus()
       return
     }
     const arrow = ARROWS[event.key]
@@ -298,7 +300,8 @@ export function FreeCanvas({
       <div className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl border border-border bg-background">
         <div
           ref={gridRef}
-          className="absolute inset-x-0 top-0 h-[97.5%]"
+          tabIndex={-1}
+          className="absolute inset-x-0 top-0 h-[97.5%] outline-none"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}

@@ -6,11 +6,14 @@ export function WidgetSidebar({
   catalog,
   placedTypes,
   onDragStart,
+  onDragEnd,
   onAdd,
 }: {
   catalog: readonly CatalogEntry[] | undefined
   placedTypes: readonly string[]
   onDragStart: (type: string) => void
+  /** Fires after every drag, dropped or cancelled. */
+  onDragEnd: () => void
   /** Keyboard/click path: appends the widget at the first free spot. */
   onAdd: (type: string) => void
 }) {
@@ -36,6 +39,7 @@ export function WidgetSidebar({
                 event.dataTransfer.effectAllowed = "copy"
                 onDragStart(entry.type)
               }}
+              onDragEnd={onDragEnd}
               onClick={() => onAdd(entry.type)}
               aria-disabled={placed}
               className={cn(

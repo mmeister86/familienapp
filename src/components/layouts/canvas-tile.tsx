@@ -12,19 +12,19 @@ type Handle = {
   cursor: string
   /** Position and size of the hit area, inside the tile. */
   area: string
-  /** Look of the visible bar. */
+  /** Visible bar, centred on the tile's border line so it never covers content. */
   bar: string
 }
 
 const HANDLES: readonly Handle[] = [
-  { edges: ["n"], cursor: "cursor-ns-resize", area: "inset-x-4 top-0 h-2", bar: "inset-x-0 top-0.5 h-1" },
-  { edges: ["s"], cursor: "cursor-ns-resize", area: "inset-x-4 bottom-0 h-2", bar: "inset-x-0 bottom-0.5 h-1" },
-  { edges: ["w"], cursor: "cursor-ew-resize", area: "inset-y-4 left-0 w-2", bar: "inset-y-0 left-0.5 w-1" },
-  { edges: ["e"], cursor: "cursor-ew-resize", area: "inset-y-4 right-0 w-2", bar: "inset-y-0 right-0.5 w-1" },
-  { edges: ["n", "e"], cursor: "cursor-nesw-resize", area: "top-0 right-0 size-3.5", bar: "top-0.5 right-0.5 size-2.5" },
-  { edges: ["s", "e"], cursor: "cursor-nwse-resize", area: "right-0 bottom-0 size-3.5", bar: "right-0.5 bottom-0.5 size-2.5" },
-  { edges: ["s", "w"], cursor: "cursor-nesw-resize", area: "bottom-0 left-0 size-3.5", bar: "bottom-0.5 left-0.5 size-2.5" },
-  { edges: ["n", "w"], cursor: "cursor-nwse-resize", area: "top-0 left-0 size-3.5", bar: "top-0.5 left-0.5 size-2.5" },
+  { edges: ["n"], cursor: "cursor-ns-resize", area: "inset-x-4 top-0 h-2", bar: "inset-x-0 -top-[2.5px] h-1" },
+  { edges: ["s"], cursor: "cursor-ns-resize", area: "inset-x-4 bottom-0 h-2", bar: "inset-x-0 -bottom-[2.5px] h-1" },
+  { edges: ["w"], cursor: "cursor-ew-resize", area: "inset-y-4 left-0 w-2", bar: "inset-y-0 -left-[2.5px] w-1" },
+  { edges: ["e"], cursor: "cursor-ew-resize", area: "inset-y-4 right-0 w-2", bar: "inset-y-0 -right-[2.5px] w-1" },
+  { edges: ["n", "e"], cursor: "cursor-nesw-resize", area: "top-0 right-0 size-3.5", bar: "-top-[5.5px] -right-[5.5px] size-2.5" },
+  { edges: ["s", "e"], cursor: "cursor-nwse-resize", area: "right-0 bottom-0 size-3.5", bar: "-right-[5.5px] -bottom-[5.5px] size-2.5" },
+  { edges: ["s", "w"], cursor: "cursor-nesw-resize", area: "bottom-0 left-0 size-3.5", bar: "-bottom-[5.5px] -left-[5.5px] size-2.5" },
+  { edges: ["n", "w"], cursor: "cursor-nwse-resize", area: "top-0 left-0 size-3.5", bar: "-top-[5.5px] -left-[5.5px] size-2.5" },
 ]
 
 export function CanvasTile({

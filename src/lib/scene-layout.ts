@@ -1,4 +1,3 @@
-import type { Layout } from "react-grid-layout/legacy"
 import type {
   ScenePalette,
   SceneWidget,
@@ -24,45 +23,6 @@ export type CatalogEntry = {
   minH: number
 }
 
-/** Widget list → grid items (ids stable, minima from the catalog). */
-export function widgetsToLayout(
-  widgets: SceneWidget[],
-  catalog: readonly CatalogEntry[],
-): Layout {
-  const minima = new Map(catalog.map((entry) => [entry.type, entry]))
-  return widgets.map((widget) => {
-    const def = minima.get(widget.type)
-    return {
-      i: widget.id,
-      x: widget.x,
-      y: widget.y,
-      w: widget.w,
-      h: widget.h,
-      minW: def?.minW ?? 1,
-      minH: def?.minH ?? 1,
-    }
-  })
-}
-
-/**
- * Grid changes back into widgets: positions/sizes sync by id, unknown ids
- * (the drop placeholder) are ignored, missing widgets are kept (a drop
- * appends separately, deletes never come through the layout).
- */
-export function applyLayoutChange(
-  widgets: SceneWidget[],
-  layout: Layout,
-): SceneWidget[] {
-  const byId = new Map(layout.map((item) => [item.i, item]))
-  return widgets.map((widget) => {
-    const item = byId.get(widget.id)
-    if (!item) {
-      return widget
-    }
-    return { ...widget, x: item.x, y: item.y, w: item.w, h: item.h }
-  })
-}
-
 /** True when two widget lists place the same tiles (order-independent). */
 export function samePlacements(a: SceneWidget[], b: SceneWidget[]): boolean {
   if (a.length !== b.length) {
@@ -77,6 +37,49 @@ export function samePlacements(a: SceneWidget[], b: SceneWidget[]): boolean {
       other.y === widget.y &&
       other.w === widget.w &&
       other.h === widget.h
+    )
+  })
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true
+  }
+  if (
+    typeof a !== "object" ||
+    typeof b !== "object" ||
+    a === null ||
+    b === null ||
+    Array.isArray(a) !== Array.isArray(b)
+  ) {
+    return false
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  return [...keys].every((key) => deepEqual(left[key], right[key]))
+}
+
+/**
+ * True when two widget lists are the same scene content (order-independent):
+ * same ids with equal type, geometry, fallback and deeply equal props.
+ */
+export function sameWidgets(a: SceneWidget[], b: SceneWidget[]): boolean {
+  if (a.length !== b.length) {
+    return false
+  }
+  const byId = new Map(b.map((widget) => [widget.id, widget]))
+  return a.every((widget) => {
+    const other = byId.get(widget.id)
+    return (
+      other !== undefined &&
+      other.type === widget.type &&
+      other.x === widget.x &&
+      other.y === widget.y &&
+      other.w === widget.w &&
+      other.h === widget.h &&
+      other.fallback === widget.fallback &&
+      deepEqual(other.props, widget.props)
     )
   })
 }

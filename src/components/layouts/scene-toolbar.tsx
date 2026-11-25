@@ -20,6 +20,10 @@ export function SceneToolbar({
   onOpenVersions,
   onResetDefault,
   onDelete,
+  canUndo,
+  canClear,
+  onUndo,
+  onClear,
 }: {
   saveStatus: SaveStatus
   hasDraft: boolean
@@ -34,6 +38,11 @@ export function SceneToolbar({
   onOpenVersions: () => void
   onResetDefault: () => void
   onDelete: () => void
+  canUndo: boolean
+  /** False for the night scene and scenes without tiles. */
+  canClear: boolean
+  onUndo: () => void
+  onClear: () => void
 }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -73,6 +82,12 @@ export function SceneToolbar({
           onClick={onDiscard}
         >
           Verwerfen
+        </Button>
+        <Button variant="outline" disabled={!canUndo} onClick={onUndo}>
+          Rückgängig
+        </Button>
+        <Button variant="outline" disabled={!canClear} onClick={onClear}>
+          Szene leeren
         </Button>
         <Button variant="outline" disabled={isNight} onClick={onPreview}>
           An die Wand (2 Min.)

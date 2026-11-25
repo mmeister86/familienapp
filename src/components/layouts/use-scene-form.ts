@@ -7,6 +7,8 @@ import type {
   SceneStart,
   SceneWidget,
 } from "../../../convex/lib/validators"
+import { emptyHistory, record, redo, undo, type History } from "@/lib/history"
+import { sameWidgets } from "@/lib/scene-layout"
 
 export type ScenesList = FunctionReturnType<typeof api.dashboardScenes.list>
 export type SceneRow = ScenesList["scenes"][number]
@@ -48,12 +50,23 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Speichern fehlgeschlagen"
 }
 
+type FormState = {
+  form: SceneForm | null
+  /** Widget lists before layout changes; form and history change together. */
+  history: History<SceneWidget[]>
+}
+
 type FormPatch = Partial<SceneForm> | ((prev: SceneForm) => Partial<SceneForm>)
 
 /**
  * Editing state for the selected scene: initialized from draft ?? published
  * on selection, autosaved (1 s debounce) while dirty. Null while nothing
  * (editable) is selected; night scenes have no draft.
+ *
+ * Layout changes (`updateLayout`) are recorded in an undo history that
+ * belongs to the open scene: it resets on selection change, on `revert`, and
+ * when the server row of the same scene changes under a clean form (unless
+ * it carries the widgets the form already has, i.e. our own saved draft).
  *
  * Two races are closed by construction: a save generation guard keeps a
  * resolving save from clearing edits typed while it was in flight, and
@@ -66,7 +79,10 @@ export function useSceneForm(
   selectedId: string | null,
 ) {
   const saveDraft = useMutation(api.dashboardScenes.saveDraft)
-  const [form, setForm] = useState<SceneForm | null>(null)
+  const [{ form, history }, setCore] = useState<FormState>({
+    form: null,
+    history: emptyHistory(),
+  })
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const saveSeq = useRef(0)
@@ -78,8 +94,14 @@ export function useSceneForm(
   // in-progress edits.
   const [session, setSession] = useState({ selectedId, scene })
   if (session.selectedId !== selectedId || (session.scene !== scene && !dirty)) {
+    const incoming = scene ? snapshotOf(scene) : null
+    const keepHistory =
+      session.selectedId === selectedId &&
+      incoming !== null &&
+      form !== null &&
+      sameWidgets(incoming.widgets, form.widgets)
     setSession({ selectedId, scene })
-    setForm(scene ? snapshotOf(scene) : null)
+    setCore({ form: incoming, history: keepHistory ? history : emptyHistory() })
     setDirty(false)
   }
 
@@ -113,22 +135,72 @@ export function useSceneForm(
   }, [dirty, token, selectedId, form, saveDraft])
 
   const updateForm = useCallback((patch: FormPatch) => {
-    setForm((prev) => {
-      if (!prev) {
+    setCore((prev) => {
+      if (!prev.form) {
         return prev
       }
-      const resolved = typeof patch === "function" ? patch(prev) : patch
-      return { ...prev, ...resolved }
+      const resolved = typeof patch === "function" ? patch(prev.form) : patch
+      return { ...prev, form: { ...prev.form, ...resolved } }
     })
     setDirty(true)
   }, [])
 
+  // Layout edits: remembers the widgets as they were, then applies the new list.
+  const updateLayout = useCallback((next: SceneWidget[]) => {
+    setCore((prev) =>
+      prev.form
+        ? {
+            form: { ...prev.form, widgets: next },
+            history: record(prev.history, prev.form.widgets),
+          }
+        : prev,
+    )
+    setDirty(true)
+  }, [])
+
+  const canUndo = history.past.length > 0
+  const canRedo = history.future.length > 0
+
+  const stepHistory = useCallback(
+    (
+      step: (
+        history: History<SceneWidget[]>,
+        current: SceneWidget[],
+      ) => { history: History<SceneWidget[]>; value: SceneWidget[] } | null,
+    ) => {
+      setCore((prev) => {
+        const result = prev.form ? step(prev.history, prev.form.widgets) : null
+        return prev.form && result
+          ? {
+              form: { ...prev.form, widgets: result.value },
+              history: result.history,
+            }
+          : prev
+      })
+      setDirty(true)
+    },
+    [],
+  )
+  const undoLayout = useCallback(() => {
+    if (canUndo) {
+      stepHistory(undo)
+    }
+  }, [canUndo, stepHistory])
+  const redoLayout = useCallback(() => {
+    if (canRedo) {
+      stepHistory(redo)
+    }
+  }, [canRedo, stepHistory])
+
   // Drops local edits and any pending save (after discard/reset/restore),
-  // re-snapping to the passed server state.
+  // re-snapping to the passed server state and starting a fresh history.
   const revert = useCallback(
     (rows: SceneRow[] | undefined, id: string | null) => {
       const current = rows?.find((entry) => entry.sceneId === id) ?? null
-      setForm(current ? snapshotOf(current) : null)
+      setCore({
+        form: current ? snapshotOf(current) : null,
+        history: emptyHistory(),
+      })
       setDirty(false)
       setError(null)
     },
@@ -137,5 +209,17 @@ export function useSceneForm(
 
   const status: SaveStatus =
     error !== null ? "error" : dirty ? "saving" : "saved"
-  return { scene, form, updateForm, revert, saveStatus: status, saveError: error }
+  return {
+    scene,
+    form,
+    updateForm,
+    updateLayout,
+    undo: undoLayout,
+    redo: redoLayout,
+    canUndo,
+    canRedo,
+    revert,
+    saveStatus: status,
+    saveError: error,
+  }
 }

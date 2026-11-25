@@ -118,6 +118,9 @@ export function Playground() {
           onDragStart={(type) => {
             draggedTypeRef.current = type
           }}
+          onDragEnd={() => {
+            draggedTypeRef.current = null
+          }}
           onAdd={(type) => {
             const plan = planClickAdd(widgets, type, MINIMA)
             if (plan.kind !== "blocked") {
