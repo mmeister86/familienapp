@@ -447,7 +447,7 @@ export function FreeCanvas({
               <div key={i} className="rounded-sm border border-dashed border-muted-foreground/25" />
             ))}
           </div>
-          <div className="absolute inset-0">
+          <div className="canvas-tiles absolute inset-0">
             {area !== null && (
             <AnimatePresence initial={false}>
               {shown.map((widget) => {

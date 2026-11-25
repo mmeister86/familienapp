@@ -24,18 +24,17 @@ type Handle = {
   /** Position and size of the hit area, inside the tile. */
   area: string
   /** Visible bar, centred on the tile's border line so it never covers content. */
-  bar: string
 }
 
 const HANDLES: readonly Handle[] = [
-  { edges: ["n"], cursor: "cursor-ns-resize", area: "inset-x-4 top-0 h-2", bar: "inset-x-0 -top-[2.5px] h-1" },
-  { edges: ["s"], cursor: "cursor-ns-resize", area: "inset-x-4 bottom-0 h-2", bar: "inset-x-0 -bottom-[2.5px] h-1" },
-  { edges: ["w"], cursor: "cursor-ew-resize", area: "inset-y-4 left-0 w-2", bar: "inset-y-0 -left-[2.5px] w-1" },
-  { edges: ["e"], cursor: "cursor-ew-resize", area: "inset-y-4 right-0 w-2", bar: "inset-y-0 -right-[2.5px] w-1" },
-  { edges: ["n", "e"], cursor: "cursor-nesw-resize", area: "top-0 right-0 size-3.5", bar: "-top-[5.5px] -right-[5.5px] size-2.5" },
-  { edges: ["s", "e"], cursor: "cursor-nwse-resize", area: "right-0 bottom-0 size-3.5", bar: "-right-[5.5px] -bottom-[5.5px] size-2.5" },
-  { edges: ["s", "w"], cursor: "cursor-nesw-resize", area: "bottom-0 left-0 size-3.5", bar: "-bottom-[5.5px] -left-[5.5px] size-2.5" },
-  { edges: ["n", "w"], cursor: "cursor-nwse-resize", area: "top-0 left-0 size-3.5", bar: "-top-[5.5px] -left-[5.5px] size-2.5" },
+  { edges: ["n"], cursor: "cursor-ns-resize", area: "inset-x-4 top-0 h-2" },
+  { edges: ["s"], cursor: "cursor-ns-resize", area: "inset-x-4 bottom-0 h-2" },
+  { edges: ["w"], cursor: "cursor-ew-resize", area: "inset-y-4 left-0 w-2" },
+  { edges: ["e"], cursor: "cursor-ew-resize", area: "inset-y-4 right-0 w-2" },
+  { edges: ["n", "e"], cursor: "cursor-nesw-resize", area: "top-0 right-0 size-3.5" },
+  { edges: ["s", "e"], cursor: "cursor-nwse-resize", area: "right-0 bottom-0 size-3.5" },
+  { edges: ["s", "w"], cursor: "cursor-nesw-resize", area: "bottom-0 left-0 size-3.5" },
+  { edges: ["n", "w"], cursor: "cursor-nwse-resize", area: "top-0 left-0 size-3.5" },
 ]
 
 export function CanvasTile({
@@ -116,12 +115,11 @@ export function CanvasTile({
         }
       }}
       className={cn(
-        "group touch-none rounded-xl border border-border bg-card p-3 select-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "absolute transition-shadow duration-200 motion-reduce:transition-none",
+        "canvas-tile absolute touch-none rounded-xl border border-border bg-card p-3 select-none",
         !present && "pointer-events-none",
         raised && "z-30",
         lifted
-          ? "cursor-grabbing shadow-[0_12px_28px_-8px_rgb(0_0_0/0.28)] dark:shadow-[0_12px_28px_-8px_rgb(0_0_0/0.75)]"
+          ? "canvas-tile-lifted cursor-grabbing"
           : "cursor-grab",
       )}
       initial={reduced ? false : { ...box, opacity: 0, scale: ENTER_SCALE }}
@@ -145,14 +143,7 @@ export function CanvasTile({
             onResizeStart(event, widget, handle.edges)
           }}
           className={cn("absolute", handle.area, handle.cursor)}
-        >
-          <span
-            className={cn(
-              "absolute rounded-full bg-primary/40 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
-              handle.bar,
-            )}
-          />
-        </div>
+        />
       ))}
       <div className="flex items-center gap-2 pr-6">
         {createElement(widgetIcon(widget.type), {

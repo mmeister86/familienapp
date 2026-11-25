@@ -335,3 +335,62 @@
     animation: none;
   }
 }
+
+/*
+ * Scene builder canvas: the tile under the pointer (or with keyboard focus)
+ * glows inward and the others step back. Glow and lift share one box-shadow
+ * through custom properties so neither overrides the other. Dimmed tiles stay
+ * opaque (the grid must not show through); their content fades instead, since
+ * Motion owns the tiles' own inline `opacity`.
+ */
+.canvas-tile {
+  --tile-glow: 0 0 #0000;
+  --tile-lift: 0 0 #0000;
+  box-shadow: inset var(--tile-glow), var(--tile-lift);
+  outline: none;
+  transition:
+    box-shadow 160ms ease-out,
+    border-color 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.canvas-tile:is(:hover, :focus-within) {
+  --tile-glow: 0 0 22px 0 color-mix(in srgb, var(--ring) 55%, transparent);
+  border-color: color-mix(in srgb, var(--ring) 75%, transparent);
+}
+
+.canvas-tile:focus-visible {
+  --tile-glow: 0 0 26px 2px color-mix(in srgb, var(--ring) 80%, transparent);
+  border-color: var(--ring);
+}
+
+.canvas-tile-lifted {
+  --tile-lift: 0 12px 28px -8px rgb(0 0 0 / 0.28);
+}
+
+.dark .canvas-tile-lifted {
+  --tile-lift: 0 12px 28px -8px rgb(0 0 0 / 0.75);
+}
+
+.canvas-tile > * {
+  transition: opacity 160ms ease-out;
+}
+
+.canvas-tiles:has(.canvas-tile:is(:hover, :focus-within))
+  .canvas-tile:not(:hover, :focus-within) {
+  background-color: color-mix(in srgb, var(--card) 45%, var(--background));
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.canvas-tiles:has(.canvas-tile:is(:hover, :focus-within))
+  .canvas-tile:not(:hover, :focus-within)
+  > * {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-tile,
+  .canvas-tile > * {
+    transition: none;
+  }
+}
