@@ -1,8 +1,21 @@
 import type { Layout } from "react-grid-layout/legacy"
 import type {
+  ScenePalette,
   SceneWidget,
   WidgetProps,
 } from "../../convex/lib/validators"
+
+/**
+ * Palette shown in the builder header: the form is the source of truth
+ * whenever it exists (an unset palette there means "Automatisch"); the
+ * published stand only stands in while there is no form.
+ */
+export function headerPalette(
+  form: { palette?: ScenePalette } | null,
+  published: { palette?: ScenePalette } | null | undefined,
+): ScenePalette | undefined {
+  return form !== null ? form.palette : published?.palette
+}
 
 export type CatalogEntry = {
   type: string

@@ -49,11 +49,20 @@ function DayBar({
 }
 
 const PALETTE_AUTO = "auto"
+const PALETTE_LABELS: Record<ScenePalette, string> = {
+  paper: "Papier (hell)",
+  board: "Tafel (dunkel)",
+}
 const PALETTE_OPTIONS = [
   { value: PALETTE_AUTO, label: "Automatisch" },
-  { value: "paper", label: "Papier (hell)" },
-  { value: "board", label: "Tafel (dunkel)" },
+  ...(Object.entries(PALETTE_LABELS) as [ScenePalette, string][]).map(
+    ([value, label]) => ({ value, label }),
+  ),
 ]
+
+function isPalette(value: string): value is ScenePalette {
+  return value in PALETTE_LABELS
+}
 
 const DAY_FIELDS: { day: DayKind; label: string }[] = [
   { day: "schoolDay", label: "Mo–Fr" },
@@ -118,9 +127,7 @@ export function SceneHeader({
               value={palette ?? PALETTE_AUTO}
               options={PALETTE_OPTIONS}
               onChange={(value) =>
-                onPaletteChange(
-                  value === "paper" || value === "board" ? value : undefined,
-                )
+                onPaletteChange(isPalette(value) ? value : undefined)
               }
             />
           </div>
