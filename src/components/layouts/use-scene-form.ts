@@ -8,6 +8,7 @@ import type {
   SceneWidget,
 } from "../../../convex/lib/validators"
 import { emptyHistory, record, redo, undo, type History } from "@/lib/history"
+import { pendingFlush } from "@/lib/pending-save"
 import { sameWidgets } from "@/lib/scene-layout"
 
 export type ScenesList = FunctionReturnType<typeof api.dashboardScenes.list>
@@ -50,6 +51,17 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Speichern fehlgeschlagen"
 }
 
+function saveArgs(token: string, sceneId: string, form: SceneForm) {
+  return {
+    token,
+    sceneId,
+    name: form.name,
+    start: form.start,
+    widgets: form.widgets,
+    ...(form.palette === undefined ? {} : { palette: form.palette }),
+  }
+}
+
 type FormState = {
   form: SceneForm | null
   /** Widget lists before layout changes; form and history change together. */
@@ -86,6 +98,8 @@ export function useSceneForm(
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const saveSeq = useRef(0)
+  // What the last committed render was editing, for the flush on leaving.
+  const latest = useRef({ token, sceneId: selectedId, dirty: false, form })
 
   const scene = scenes?.find((entry) => entry.sceneId === selectedId) ?? null
 
@@ -112,19 +126,13 @@ export function useSceneForm(
     saveSeq.current += 1
     const fired = saveSeq.current
     const timer = window.setTimeout(() => {
-      saveDraft({
-        token,
-        sceneId: selectedId,
-        name: form.name,
-        start: form.start,
-        widgets: form.widgets,
-        ...(form.palette === undefined ? {} : { palette: form.palette }),
-      }).then(
+      saveDraft(saveArgs(token, selectedId, form)).then(
         () => {
           // Another edit may have armed a newer save meanwhile.
           if (saveSeq.current === fired) {
             setDirty(false)
           }
+          setError(null)
         },
         (e: unknown) => {
           setError(errorMessage(e))
@@ -133,6 +141,30 @@ export function useSceneForm(
     }, 1000)
     return () => window.clearTimeout(timer)
   }, [dirty, token, selectedId, form, saveDraft])
+
+  useEffect(() => {
+    latest.current = { token, sceneId: selectedId, dirty, form }
+  })
+
+  // Leaving a scene (selection change or unmount) with unsaved edits sends
+  // them right away for that scene instead of dropping the pending debounce.
+  // Runs only when the id changes or on unmount, so the next id is "other".
+  useEffect(() => {
+    return () => {
+      const { token: savedToken, ...prev } = latest.current
+      const flush = pendingFlush(prev, null)
+      if (!savedToken || !flush) {
+        return
+      }
+      saveDraft(saveArgs(savedToken, flush.sceneId, flush.form)).catch(
+        (e: unknown) => {
+          setError(
+            `Speichern der vorherigen Szene fehlgeschlagen: ${errorMessage(e)}`,
+          )
+        },
+      )
+    }
+  }, [selectedId, saveDraft])
 
   const updateForm = useCallback((patch: FormPatch) => {
     setCore((prev) => {
@@ -168,18 +200,17 @@ export function useSceneForm(
         current: SceneWidget[],
       ) => { history: History<SceneWidget[]>; value: SceneWidget[] } | null,
     ) => {
-      setCore((prev) => {
-        const result = prev.form ? step(prev.history, prev.form.widgets) : null
-        return prev.form && result
-          ? {
-              form: { ...prev.form, widgets: result.value },
-              history: result.history,
-            }
-          : prev
+      const result = form ? step(history, form.widgets) : null
+      if (!form || !result) {
+        return
+      }
+      setCore({
+        form: { ...form, widgets: result.value },
+        history: result.history,
       })
       setDirty(true)
     },
-    [],
+    [form, history],
   )
   const undoLayout = useCallback(() => {
     if (canUndo) {
@@ -203,6 +234,8 @@ export function useSceneForm(
       })
       setDirty(false)
       setError(null)
+      // Deliberately dropped edits must not be flushed when leaving.
+      latest.current = { ...latest.current, dirty: false }
     },
     [],
   )

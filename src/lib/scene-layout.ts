@@ -23,24 +23,6 @@ export type CatalogEntry = {
   minH: number
 }
 
-/** True when two widget lists place the same tiles (order-independent). */
-export function samePlacements(a: SceneWidget[], b: SceneWidget[]): boolean {
-  if (a.length !== b.length) {
-    return false
-  }
-  const byId = new Map(b.map((widget) => [widget.id, widget]))
-  return a.every((widget) => {
-    const other = byId.get(widget.id)
-    return (
-      other !== undefined &&
-      other.x === widget.x &&
-      other.y === widget.y &&
-      other.w === widget.w &&
-      other.h === widget.h
-    )
-  })
-}
-
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) {
     return true

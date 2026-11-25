@@ -82,7 +82,7 @@ export function FreeCanvas({
   onAddWidget: (type: string, plan: DropPlan) => void
   onUpdateWidget: (id: string, patch: Partial<SceneWidget>) => void
   onRemoveWidget: (id: string) => void
-  /** Playground hook: behave as if a sidebar drag hovered this point. */
+  /** For the dev playground's demo states only; never set by the app. Behaves as if a sidebar drag hovered this point. */
   forcedDrop?: { type: string; point: { x: number; y: number } }
 }) {
   const minima = useMemo(() => minimaFrom(catalog), [catalog])
@@ -207,6 +207,9 @@ export function FreeCanvas({
     widget: SceneWidget,
     edges: readonly Edge[] | null,
   ): void => {
+    if (!event.isPrimary || event.button !== 0) {
+      return
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = {
       id: widget.id,
@@ -218,11 +221,22 @@ export function FreeCanvas({
     setLive({ id: widget.id, widgets, blocked: null })
   }
 
+  const onPointerCancel = (): void => {
+    dragRef.current = null
+    setLive(null)
+  }
+
   const onPointerMove = (event: PointerEvent): void => {
     const drag = dragRef.current
-    if (drag) {
-      setLive(compute(drag, event))
+    if (!drag) {
+      return
     }
+    if (event.buttons === 0) {
+      // The release happened elsewhere (lost pointerup): cancel, apply nothing.
+      onPointerCancel()
+      return
+    }
+    setLive(compute(drag, event))
   }
 
   const onPointerUp = (event: PointerEvent): void => {
@@ -238,9 +252,11 @@ export function FreeCanvas({
     }
   }
 
-  const onPointerCancel = (): void => {
-    dragRef.current = null
-    setLive(null)
+  // Removal from the tile's settings popover: the focused control vanishes
+  // with the tile, so hand focus back to the canvas like the Delete key does.
+  const removeFromPopover = (id: string): void => {
+    onRemoveWidget(id)
+    gridRef.current?.focus()
   }
 
   // --- keyboard -----------------------------------------------------------
@@ -325,7 +341,7 @@ export function FreeCanvas({
                 onResizeStart={begin}
                 onKeyDown={onTileKeyDown}
                 onUpdateWidget={onUpdateWidget}
-                onRemoveWidget={onRemoveWidget}
+                onRemoveWidget={removeFromPopover}
               />
             ))}
             {live?.blocked != null && (
