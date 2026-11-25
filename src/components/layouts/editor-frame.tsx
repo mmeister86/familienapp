@@ -63,7 +63,7 @@ export function EditorFrame({
 
 /**
  * Width cap for the 9:16 canvas: at most 600px, narrower when the viewport is
- * too short to show the whole sheet (chrome above and below is OFFSET_PX),
+ * too short to show the whole sheet (chrome above and below is CHROME_OFFSET_PX),
  * never below 320px (the page scrolls instead).
  */
 const CHROME_OFFSET_PX = 316
