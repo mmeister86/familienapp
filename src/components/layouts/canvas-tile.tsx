@@ -119,7 +119,7 @@ export function CanvasTile({
         "group touch-none rounded-xl border border-border bg-card p-3 select-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "absolute transition-shadow duration-200 motion-reduce:transition-none",
         !present && "pointer-events-none",
-        raised && "z-10",
+        raised && "z-30",
         lifted
           ? "cursor-grabbing shadow-[0_12px_28px_-8px_rgb(0_0_0/0.28)] dark:shadow-[0_12px_28px_-8px_rgb(0_0_0/0.75)]"
           : "cursor-grab",
