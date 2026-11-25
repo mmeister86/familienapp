@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { useSession } from "@/hooks/useSession"
 import { useToasts } from "@/hooks/useToasts"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -22,6 +23,7 @@ import type {
 } from "../../convex/lib/validators"
 import { ConfirmDialog } from "@/components/layouts/confirm-dialog"
 import { NewSceneDialog } from "@/components/layouts/new-scene-dialog"
+import { CanvasStage, EditorFrame } from "@/components/layouts/editor-frame"
 import { FreeCanvas } from "@/components/layouts/free-canvas"
 import { SceneHeader } from "@/components/layouts/scene-header"
 import { SceneTabs } from "@/components/layouts/scene-tabs"
@@ -92,6 +94,7 @@ export function LayoutsPage() {
     undo,
     redo,
     canUndo,
+    canRedo,
     revert,
     saveStatus,
     saveError,
@@ -357,74 +360,79 @@ export function LayoutsPage() {
   }
   const saving = saveStatus === "saving"
 
+  const isNight = scene.kind === "night"
+  const nightCard = (
+    <div className="mx-auto w-full max-w-[600px] space-y-3 rounded-xl border border-border bg-card p-6">
+      <div className="text-sm font-medium">Nacht-Ansicht</div>
+      <p className="text-sm text-muted-foreground">
+        Uhr, Wetter, Hintergrundbild — die Ansicht selbst lässt sich nicht
+        umbauen. Zeitänderungen gelten sofort.
+      </p>
+      {nightUndo !== null && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm">Zeiten geändert.</span>
+          <Button variant="outline" size="sm" onClick={handleNightUndo}>
+            Rückgängig
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+  const frameError = isNight ? nightError : saveError
+
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <PageHeader
         title="Wand-Szenen"
         subtitle="Zeitplan und Kachel-Layouts für das Wanddisplay."
-      />
-      <div className="flex items-center justify-between gap-4">
-        <SceneTabs
-          scenes={scenes}
-          selectedId={selectedId}
-          onSelect={setExplicitId}
-        />
-        <Button variant="outline" onClick={() => setNewOpen(true)}>
-          Neue Szene
-        </Button>
-      </div>
-      <SceneToolbar
-        saveStatus={saveStatus}
-        hasDraft={scene.draft !== null}
-        isNight={scene.kind === "night"}
-        isSeeded={defaultScene(sceneId) !== undefined}
-        busy={saving}
-        previewUntil={previewUntil}
-        onPublish={handlePublish}
-        onDiscard={() => setConfirmDiscard(true)}
-        onPreview={handlePreview}
-        onOpenVersions={() => setVersionsOpen(true)}
-        onResetDefault={() => setConfirmReset(true)}
-        onDelete={() => setConfirmDelete(true)}
-        canUndo={canUndo}
-        canClear={scene.kind !== "night" && (form?.widgets.length ?? 0) > 0}
-        onUndo={undo}
-        onClear={() => setConfirmClear(true)}
-      />
-      <SceneHeader
-        scene={scene}
-        name={headerName}
-        start={headerStart}
-        onNameChange={
-          scene.kind === "night" ? null : (name) => updateForm({ name })
+        actions={
+          <Button variant="outline" onClick={() => setNewOpen(true)}>
+            <Plus aria-hidden="true" />
+            Neue Szene
+          </Button>
         }
-        onStartChange={handleStartChange}
-        palette={headerPalette(form, scene.published)}
-        onPaletteChange={
-          scene.kind === "night" ? null : (palette) => updateForm({ palette })
-        }
-        barScenes={barScenes}
-        error={scene.kind === "night" ? nightError : saveError}
       />
-      {scene.kind === "night" ? (
-        <div className="max-w-[600px] space-y-3 rounded-xl border border-border bg-card p-6">
-          <div className="text-sm font-medium">Nacht-Ansicht</div>
-          <p className="text-sm text-muted-foreground">
-            Uhr, Wetter, Hintergrundbild — die Ansicht selbst lässt sich nicht
-            umbauen. Zeitänderungen gelten sofort.
-          </p>
-          {nightUndo !== null && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Zeiten geändert.</span>
-              <Button variant="outline" size="sm" onClick={handleNightUndo}>
-                Rückgängig
-              </Button>
-            </div>
-          )}
-        </div>
-      ) : (
-        form !== null && (
-          <div className="flex gap-6">
+      <SceneTabs
+        scenes={scenes}
+        selectedId={selectedId}
+        onSelect={setExplicitId}
+      />
+      <EditorFrame
+        topBar={
+          <SceneToolbar
+            name={headerName}
+            saveStatus={saveStatus}
+            hasDraft={scene.draft !== null}
+            isNight={isNight}
+            isSeeded={defaultScene(sceneId) !== undefined}
+            busy={saving}
+            previewUntil={previewUntil}
+            onPublish={handlePublish}
+            onDiscard={() => setConfirmDiscard(true)}
+            onPreview={handlePreview}
+            onOpenVersions={() => setVersionsOpen(true)}
+            onResetDefault={() => setConfirmReset(true)}
+            onDelete={() => setConfirmDelete(true)}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            canClear={!isNight && (form?.widgets.length ?? 0) > 0}
+            onUndo={undo}
+            onRedo={redo}
+            onClear={() => setConfirmClear(true)}
+          />
+        }
+        alert={
+          frameError !== null && (
+            <p
+              role="alert"
+              className="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive"
+            >
+              {frameError}
+            </p>
+          )
+        }
+        library={
+          isNight || form === null ? null : (
             <WidgetSidebar
               catalog={catalog}
               placedTypes={form.widgets.map((widget) => widget.type)}
@@ -436,21 +444,43 @@ export function LayoutsPage() {
               }}
               onAdd={handleAddWidget}
             />
-            <div className="min-w-0 flex-1">
-              <FreeCanvas
-                key={selectedId}
-                widgets={form.widgets}
-                catalog={catalog}
-                draggedTypeRef={draggedType}
-                onChange={updateLayout}
-                onAddWidget={addWidget}
-                onUpdateWidget={handleUpdateWidget}
-                onRemoveWidget={handleRemoveWidget}
-              />
-            </div>
-          </div>
-        )
-      )}
+          )
+        }
+        workbench={
+          isNight ? (
+            <div className="flex min-h-[28rem] items-center">{nightCard}</div>
+          ) : (
+            form !== null && (
+              <CanvasStage>
+                <FreeCanvas
+                  key={selectedId}
+                  widgets={form.widgets}
+                  catalog={catalog}
+                  draggedTypeRef={draggedType}
+                  onChange={updateLayout}
+                  onAddWidget={addWidget}
+                  onUpdateWidget={handleUpdateWidget}
+                  onRemoveWidget={handleRemoveWidget}
+                />
+              </CanvasStage>
+            )
+          )
+        }
+        inspector={
+          <SceneHeader
+            scene={scene}
+            name={headerName}
+            start={headerStart}
+            onNameChange={isNight ? null : (name) => updateForm({ name })}
+            onStartChange={handleStartChange}
+            palette={headerPalette(form, scene.published)}
+            onPaletteChange={
+              isNight ? null : (palette) => updateForm({ palette })
+            }
+            barScenes={barScenes}
+          />
+        }
+      />
       <VersionHistory
         token={token}
         sceneId={selectedId}

@@ -28,15 +28,17 @@ export function StartTimeField({
   }, [value])
 
   return (
-    <div className="flex items-end gap-2">
-      <label className="block">
-        <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
+    <div className="flex items-end gap-2 xl:items-center">
+      <label className="flex min-w-0 flex-1 flex-col gap-1 xl:flex-row xl:items-center xl:gap-2">
+        <span className="shrink-0 xl:w-10 text-xs text-muted-foreground">
+          {label}
+        </span>
         <Input
           type="time"
           value={value ?? ""}
           disabled={value === null}
           onChange={(event) => onChange(event.target.value || null)}
-          className="w-32"
+          className="min-w-0 xl:flex-1 px-2.5 text-sm xl:px-2"
         />
       </label>
       <Switch

@@ -18,11 +18,10 @@ export function WidgetSidebar({
   onAdd: (type: string) => void
 }) {
   return (
-    <aside className="w-60 shrink-0">
-      <h2 className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Widgets
-      </h2>
-      <div className="space-y-2">
+    <aside>
+      <h2 className="text-sm font-semibold">Widgets</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">Ziehen oder anklicken</p>
+      <div className="mt-3 space-y-1.5">
         {(catalog ?? []).map((entry) => {
           const placed = placedTypes.includes(entry.type)
           const Icon = widgetIcon(entry.type)
@@ -43,7 +42,7 @@ export function WidgetSidebar({
               onClick={() => onAdd(entry.type)}
               aria-disabled={placed}
               className={cn(
-                "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed",
+                "flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed",
                 placed
                   ? "opacity-40"
                   : "cursor-grab active:cursor-grabbing",

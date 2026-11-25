@@ -78,7 +78,6 @@ export function SceneHeader({
   palette,
   onPaletteChange,
   barScenes,
-  error,
 }: {
   scene: SceneRow
   name: string
@@ -91,11 +90,11 @@ export function SceneHeader({
   onPaletteChange: ((palette: ScenePalette | undefined) => void) | null
   /** Published stands, with the selected scene's edited values. */
   barScenes: SceneScheduleInput[]
-  error: string | null
 }) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+    <div>
+      <h2 className="text-sm font-semibold">Szene</h2>
+      <div className="mt-3 space-y-6">
         {onNameChange === null ? (
           <div className="text-lg font-semibold">{name}</div>
         ) : (
@@ -107,48 +106,52 @@ export function SceneHeader({
               value={name}
               maxLength={30}
               onChange={(event) => onNameChange(event.target.value)}
-              className="w-56"
+              className="w-full"
             />
           </label>
         )}
-        {DAY_FIELDS.map(({ day, label }) => (
-          <StartTimeField
-            key={day}
-            day={day}
-            label={label}
-            value={start[day]}
-            onChange={(value) => onStartChange(day, value)}
-          />
-        ))}
+        <div>
+          <h3 className="mb-3 text-xs font-medium">Startzeit</h3>
+          <div className="space-y-2">
+            {DAY_FIELDS.map(({ day, label }) => (
+              <StartTimeField
+                key={day}
+                day={day}
+                label={label}
+                value={start[day]}
+                onChange={(value) => onStartChange(day, value)}
+              />
+            ))}
+          </div>
+        </div>
         {onPaletteChange !== null && (
-          <div className="w-48">
-            <LabeledSelect
-              label="Farbwelt"
-              value={palette ?? PALETTE_AUTO}
-              options={PALETTE_OPTIONS}
-              onChange={(value) =>
-                onPaletteChange(isPalette(value) ? value : undefined)
-              }
+          <LabeledSelect
+            label="Farbwelt"
+            value={palette ?? PALETTE_AUTO}
+            options={PALETTE_OPTIONS}
+            onChange={(value) =>
+              onPaletteChange(isPalette(value) ? value : undefined)
+            }
+          />
+        )}
+        <div>
+          <h3 className="mb-3 text-xs font-medium">Tagesablauf</h3>
+          <div className="space-y-3">
+            <DayBar
+              label="Mo–Fr"
+              segments={daySegments(barScenes, "schoolDay")}
+              selectedId={scene.sceneId}
+            />
+            <DayBar
+              label="Sa/So"
+              segments={daySegments(barScenes, "weekend")}
+              selectedId={scene.sceneId}
             />
           </div>
-        )}
-      </div>
-      {error !== null && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="grid max-w-3xl gap-2 sm:grid-cols-2">
-        <DayBar
-          label="Mo–Fr"
-          segments={daySegments(barScenes, "schoolDay")}
-          selectedId={scene.sceneId}
-        />
-        <DayBar
-          label="Sa/So"
-          segments={daySegments(barScenes, "weekend")}
-          selectedId={scene.sceneId}
-        />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Hell markiert: diese Szene
+          </p>
+        </div>
       </div>
     </div>
   )
