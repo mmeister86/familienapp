@@ -351,6 +351,42 @@ describe("GET /dashboard/calendars", () => {
     }
   });
 
+  it("carriesPersonColourOnlyWhenItIsHex (#RRGGBB, otherwise key omitted)", async () => {
+    stubCalendarEnv();
+    try {
+      const t = setupCalendarTest();
+      await seedConfiguredFeed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("users", {
+          slug: "gruen",
+          name: "Gruen",
+          role: "child",
+          color: "green",
+          emoji: "🧪",
+          pinHash: "test-hash",
+          pinSalt: "test-salt",
+          failedAttempts: 0,
+        });
+      });
+      const response = await getCalendars(t, "/dashboard/calendars", {
+        Authorization: `Bearer ${CALENDAR_TOKEN}`,
+      });
+      const feed = (await response.json()) as {
+        people: Array<Record<string, unknown>>;
+      };
+      const named = feed.people.filter((person) => person["slug"] === "gruen");
+      expect(named).toHaveLength(1);
+      expect("color" in named[0]!).toBe(false);
+      const others = feed.people.filter((person) => person["slug"] !== "gruen");
+      expect(others.length).toBeGreaterThan(0);
+      for (const person of others) {
+        expect(person["color"]).toBe("#2563eb");
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("notConfiguredIs503WhileExplicitEmptySucceeds", async () => {
     stubCalendarEnv();
     try {

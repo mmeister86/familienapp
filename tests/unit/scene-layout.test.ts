@@ -3,6 +3,7 @@ import {
   applyLayoutChange,
   defaultPropsFor,
   firstFreeSpot,
+  headerPalette,
   samePlacements,
   widgetsToLayout,
 } from "../../src/lib/scene-layout.js";
@@ -100,5 +101,22 @@ describe("firstFreeSpot", () => {
     const full = [widget({ x: 0, y: 0, w: 12, h: 24 })];
     expect(firstFreeSpot(full, 4, 4)).toBeNull();
     expect(firstFreeSpot([], 13, 4)).toBeNull();
+  });
+});
+
+describe("headerPalette", () => {
+  it("lets the form win, even when it unset the palette", () => {
+    expect(
+      headerPalette({ palette: undefined }, { palette: "board" }),
+    ).toBeUndefined();
+    expect(headerPalette({ palette: "paper" }, { palette: "board" })).toBe(
+      "paper",
+    );
+  });
+
+  it("falls back to the published stand without a form", () => {
+    expect(headerPalette(null, { palette: "board" })).toBe("board");
+    expect(headerPalette(null, null)).toBeUndefined();
+    expect(headerPalette(null, undefined)).toBeUndefined();
   });
 });

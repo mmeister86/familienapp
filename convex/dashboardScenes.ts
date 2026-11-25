@@ -29,6 +29,8 @@ import {
   sceneStartValidator,
   sceneWidgetValidator,
   scenesFeedValidator,
+  scenePaletteValidator,
+  type ScenePalette,
   type SceneWidget,
 } from "./lib/validators";
 
@@ -42,6 +44,14 @@ const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 type SceneDoc = Doc<"dashboardScenes">;
 type DbReader = { db: DatabaseReader };
+
+// Conditional spread: an unset palette must leave no key behind (never
+// null or ""), so documents without one stay valid and round-trip unchanged.
+function paletteField(
+  palette: ScenePalette | undefined,
+): { palette?: ScenePalette } {
+  return palette === undefined ? {} : { palette };
+}
 
 function notConfigured(): never {
   throw new ConvexError(`${SCENES_NOT_CONFIGURED}: no scenes published yet`);
@@ -230,6 +240,7 @@ export const createScene = mutation({
     assertUniqueSceneName(name, "", otherNames(scenes, ""));
     let draftStart = args.start;
     let copiedWidgets: SceneWidget[] = [];
+    let copiedPalette: ScenePalette | undefined;
     if (args.copyFrom !== undefined) {
       const source = await getSceneOrThrow(ctx, args.copyFrom);
       const snapshot = source.draft ?? source.published;
@@ -240,6 +251,7 @@ export const createScene = mutation({
       }
       draftStart = snapshot.start;
       copiedWidgets = snapshot.widgets;
+      copiedPalette = snapshot.palette;
     }
     assertValidStart(draftStart);
     assertValidWidgets(copiedWidgets);
@@ -263,7 +275,12 @@ export const createScene = mutation({
     await ctx.db.insert("dashboardScenes", {
       sceneId,
       kind: "layout",
-      draft: { name, start: draftStart, widgets: [...copiedWidgets] },
+      draft: {
+        name,
+        start: draftStart,
+        widgets: [...copiedWidgets],
+        ...paletteField(copiedPalette),
+      },
       published: null,
       updatedBy: caller._id,
       updatedAt: Date.now(),
@@ -279,6 +296,7 @@ export const saveDraft = mutation({
     name: v.string(),
     start: sceneStartValidator,
     widgets: v.array(sceneWidgetValidator),
+    palette: v.optional(scenePaletteValidator),
   },
   handler: async (ctx, args) => {
     const caller = await requireParent(ctx, args.token);
@@ -299,7 +317,12 @@ export const saveDraft = mutation({
       otherNames(scenes, scene.sceneId),
     );
     await ctx.db.patch(scene._id, {
-      draft: { name, start: args.start, widgets: args.widgets },
+      draft: {
+        name,
+        start: args.start,
+        widgets: args.widgets,
+        ...paletteField(args.palette),
+      },
       updatedBy: caller._id,
       updatedAt: Date.now(),
     });
@@ -572,6 +595,7 @@ export const resetToDefault = mutation({
         name: defaults.name,
         start: defaults.start,
         widgets: [...defaults.widgets],
+        ...paletteField(defaults.palette),
       },
       updatedBy: caller._id,
       updatedAt: Date.now(),
@@ -665,6 +689,7 @@ export const getScenesFeed = internalQuery({
               kind: scene.kind,
               start: published.start,
               widgets: published.widgets,
+              ...paletteField(published.palette),
             },
       ),
       ...(preview === undefined
@@ -765,6 +790,7 @@ export const seedDefaultScenes = internalMutation({
           name: defaults.name,
           start: defaults.start,
           widgets: [...defaults.widgets],
+          ...paletteField(defaults.palette),
         },
         updatedAt: now,
       });

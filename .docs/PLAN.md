@@ -548,6 +548,11 @@ Decisions (2026-10-11, non-negotiable):
 - [ ] Builder UI (`/layouts`, "Verwalten", parents, ≥ 1024 px): scene tabs, inline name + Mo–Fr/Sa/So start times,
   `react-grid-layout` canvas (12 cols, 24 rows, bounded, no compaction), widget sidebar from `catalog`,
   auto-save drafts, publish/discard/preview/versions/reset/delete toolbar, Convex errors as toasts
+- [ ] Wall redesign mirror: catalog gains `dayband` (Tagesband, min 8 × 4) and `week` (Woche, min 6 × 5), `shopping`
+  minimum drops to 4 × 2; built-in afternoon scene becomes clock / dayband / school / week / shopping
+- [ ] Palette per scene: optional `palette` (`paper` | `board`) on layout snapshots and the feed, "Farbwelt" select in the
+  builder header; built-ins morning/day/afternoon `paper`, evening `board`
+  (see `.docs/FAMILY_APP.md`, `GET /dashboard/scenes`)
 
 **Done when:** a parent drags a widget onto the 12×24 canvas at 1440 px and the wall follows within 30 s of
 publishing; drafts never reach the wall; "An die Wand" shows for 2 min; night time changes apply without

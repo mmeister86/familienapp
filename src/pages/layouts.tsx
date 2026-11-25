@@ -11,6 +11,7 @@ import {
   applyLayoutChange,
   defaultPropsFor,
   firstFreeSpot,
+  headerPalette,
 } from "@/lib/scene-layout"
 import type { Layout } from "react-grid-layout/legacy"
 import { defaultScene } from "../../convex/lib/defaultScenes"
@@ -377,6 +378,10 @@ export function LayoutsPage() {
           scene.kind === "night" ? null : (name) => updateForm({ name })
         }
         onStartChange={handleStartChange}
+        palette={headerPalette(form, scene.published)}
+        onPaletteChange={
+          scene.kind === "night" ? null : (palette) => updateForm({ palette })
+        }
         barScenes={barScenes}
         error={scene.kind === "night" ? nightError : saveError}
       />

@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input"
+import { LabeledSelect } from "./labeled-select"
 import { StartTimeField } from "./start-time-field"
-import type { SceneStart } from "../../../convex/lib/validators"
+import type { ScenePalette, SceneStart } from "../../../convex/lib/validators"
 import {
   daySegments,
   type DayKind,
@@ -47,6 +48,22 @@ function DayBar({
   )
 }
 
+const PALETTE_AUTO = "auto"
+const PALETTE_LABELS: Record<ScenePalette, string> = {
+  paper: "Papier (hell)",
+  board: "Tafel (dunkel)",
+}
+const PALETTE_OPTIONS = [
+  { value: PALETTE_AUTO, label: "Automatisch" },
+  ...(Object.entries(PALETTE_LABELS) as [ScenePalette, string][]).map(
+    ([value, label]) => ({ value, label }),
+  ),
+]
+
+function isPalette(value: string): value is ScenePalette {
+  return value in PALETTE_LABELS
+}
+
 const DAY_FIELDS: { day: DayKind; label: string }[] = [
   { day: "schoolDay", label: "Mo–Fr" },
   { day: "weekend", label: "Sa/So" },
@@ -58,6 +75,8 @@ export function SceneHeader({
   start,
   onNameChange,
   onStartChange,
+  palette,
+  onPaletteChange,
   barScenes,
   error,
 }: {
@@ -67,6 +86,9 @@ export function SceneHeader({
   /** Null for the night scene (fixed name). */
   onNameChange: ((name: string) => void) | null
   onStartChange: (day: DayKind, value: string | null) => void
+  palette: ScenePalette | undefined
+  /** Null for the night scene (no palette). */
+  onPaletteChange: ((palette: ScenePalette | undefined) => void) | null
   /** Published stands, with the selected scene's edited values. */
   barScenes: SceneScheduleInput[]
   error: string | null
@@ -98,6 +120,18 @@ export function SceneHeader({
             onChange={(value) => onStartChange(day, value)}
           />
         ))}
+        {onPaletteChange !== null && (
+          <div className="w-48">
+            <LabeledSelect
+              label="Farbwelt"
+              value={palette ?? PALETTE_AUTO}
+              options={PALETTE_OPTIONS}
+              onChange={(value) =>
+                onPaletteChange(isPalette(value) ? value : undefined)
+              }
+            />
+          </div>
+        )}
       </div>
       {error !== null && (
         <p role="alert" className="text-sm text-destructive">

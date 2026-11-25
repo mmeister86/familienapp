@@ -1,6 +1,8 @@
 import type { LucideIcon } from "lucide-react"
 import {
   Calendar,
+  CalendarDays,
+  ChartGantt,
   Clock,
   GraduationCap,
   Image,
@@ -19,6 +21,8 @@ export const WIDGET_ICONS: Record<string, LucideIcon> = {
   photos: Image,
   school: GraduationCap,
   calendars: Calendar,
+  dayband: ChartGantt,
+  week: CalendarDays,
 }
 
 export function widgetIcon(type: string): LucideIcon {

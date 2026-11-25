@@ -3,6 +3,7 @@ import { useMutation } from "convex/react"
 import type { FunctionReturnType } from "convex/server"
 import { api } from "../../../convex/_generated/api"
 import type {
+  ScenePalette,
   SceneStart,
   SceneWidget,
 } from "../../../convex/lib/validators"
@@ -14,6 +15,7 @@ export type SceneForm = {
   name: string
   start: SceneStart
   widgets: SceneWidget[]
+  palette: ScenePalette | undefined
 }
 
 export type SaveStatus = "saved" | "saving" | "error"
@@ -26,7 +28,12 @@ function snapshotOf(scene: SceneRow): SceneForm | null {
   if (!snap) {
     return null
   }
-  return { name: snap.name, start: { ...snap.start }, widgets: snap.widgets }
+  return {
+    name: snap.name,
+    start: { ...snap.start },
+    widgets: snap.widgets,
+    palette: snap.palette,
+  }
 }
 
 export function errorMessage(error: unknown): string {
@@ -89,6 +96,7 @@ export function useSceneForm(
         name: form.name,
         start: form.start,
         widgets: form.widgets,
+        ...(form.palette === undefined ? {} : { palette: form.palette }),
       }).then(
         () => {
           // Another edit may have armed a newer save meanwhile.

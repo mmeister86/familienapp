@@ -926,7 +926,7 @@ describe("list and catalog", () => {
     const catalog = await t.query(api.dashboardScenes.catalog, {
       token: parent.token,
     });
-    expect(catalog).toHaveLength(7);
+    expect(catalog).toHaveLength(9);
     expect(catalog[0]).toEqual({
       type: "clock",
       name: "Uhr & Wetter",
@@ -1072,5 +1072,196 @@ describe("seedDefaultScenes", () => {
       token: parent.token,
     });
     expect(listed.scenes.some((s) => s.sceneId === "morning")).toBe(false);
+  });
+});
+
+describe("palette per scene", () => {
+  async function feedScene(t: TestClient, id: string) {
+    const feed = await t.query(internal.dashboardScenes.getScenesFeed, {});
+    return feed.scenes.find((s) => s.id === id);
+  }
+
+  it("carries the palette from draft through publish into the feed", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertLayout(t);
+
+    await t.mutation(api.dashboardScenes.saveDraft, {
+      token: parent.token,
+      sceneId: "morning",
+      name: "Morgen",
+      start: start(),
+      widgets: [CLOCK],
+      palette: "board",
+    });
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    expect((await feedScene(t, "morning"))?.palette).toBe("board");
+    expect("palette" in ((await feedScene(t, "night")) ?? {})).toBe(false);
+
+    await t.mutation(api.dashboardScenes.saveDraft, {
+      token: parent.token,
+      sceneId: "morning",
+      name: "Morgen",
+      start: start(),
+      widgets: [CLOCK],
+    });
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    const scene = await feedScene(t, "morning");
+    expect(scene).toBeDefined();
+    expect("palette" in scene!).toBe(false);
+  });
+
+  it("round-trips a scene seeded without palette", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertLayout(t);
+    await t.mutation(api.dashboardScenes.saveDraft, {
+      token: parent.token,
+      sceneId: "morning",
+      name: "Morgen",
+      start: start(),
+      widgets: [CLOCK],
+    });
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    const stored = await t.run(async (ctx) =>
+      ctx.db
+        .query("dashboardScenes")
+        .withIndex("by_sceneId", (q) => q.eq("sceneId", "morning"))
+        .unique(),
+    );
+    expect(stored?.published).toEqual({
+      name: "Morgen",
+      start: start(),
+      widgets: [CLOCK],
+    });
+    expect("palette" in stored!.published!).toBe(false);
+    const scene = await feedScene(t, "morning");
+    expect("palette" in scene!).toBe(false);
+  });
+
+  it("restores a version with its palette", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertLayout(t);
+    const save = (palette?: "paper" | "board") =>
+      t.mutation(api.dashboardScenes.saveDraft, {
+        token: parent.token,
+        sceneId: "morning",
+        name: "Morgen",
+        start: start(),
+        widgets: [CLOCK],
+        ...(palette === undefined ? {} : { palette }),
+      });
+    await save("board");
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    await save();
+    await t.mutation(api.dashboardScenes.publish, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    const versions = await t.query(api.dashboardScenes.listVersions, {
+      token: parent.token,
+      sceneId: "morning",
+    });
+    const boardVersion = versions.find((v) => v.snapshot.palette === "board");
+    expect(boardVersion).toBeDefined();
+    await t.mutation(api.dashboardScenes.restoreVersion, {
+      token: parent.token,
+      sceneId: "morning",
+      versionId: boardVersion!._id,
+    });
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    const scene = listed.scenes.find((s) => s.sceneId === "morning");
+    expect(scene?.draft?.palette).toBe("board");
+  });
+
+  it("copies the palette when duplicating a scene", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertLayout(t);
+    await t.mutation(api.dashboardScenes.saveDraft, {
+      token: parent.token,
+      sceneId: "morning",
+      name: "Morgen",
+      start: start(),
+      widgets: [CLOCK],
+      palette: "board",
+    });
+    const sceneId = await t.mutation(api.dashboardScenes.createScene, {
+      token: parent.token,
+      name: "Kopie",
+      start: start({ schoolDay: "15:30", weekend: null }),
+      copyFrom: "morning",
+    });
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    expect(listed.scenes.find((s) => s.sceneId === sceneId)?.draft?.palette).toBe(
+      "board",
+    );
+  });
+
+  it("gives the built-in scenes their palettes on reset and seed", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await t.mutation(internal.dashboardScenes.seedDefaultScenes, {});
+    const expected = {
+      morning: "paper",
+      day: "paper",
+      afternoon: "paper",
+      evening: "board",
+    } as const;
+    for (const [sceneId, palette] of Object.entries(expected)) {
+      expect((await feedScene(t, sceneId))?.palette).toBe(palette);
+      await t.mutation(api.dashboardScenes.resetToDefault, {
+        token: parent.token,
+        sceneId,
+      });
+    }
+    const listed = await t.query(api.dashboardScenes.list, {
+      token: parent.token,
+    });
+    for (const [sceneId, palette] of Object.entries(expected)) {
+      expect(
+        listed.scenes.find((s) => s.sceneId === sceneId)?.draft?.palette,
+      ).toBe(palette);
+    }
+    const night = await feedScene(t, "night");
+    expect("palette" in night!).toBe(false);
+  });
+
+  it("rejects an unknown palette value", async () => {
+    const t = setupCalendarTest();
+    const parent = await createParentSession(t);
+    await insertNight(t);
+    await insertLayout(t);
+    await expect(
+      t.mutation(api.dashboardScenes.saveDraft, {
+        token: parent.token,
+        sceneId: "morning",
+        name: "Morgen",
+        start: start(),
+        widgets: [CLOCK],
+        palette: "neon" as unknown as "paper",
+      }),
+    ).rejects.toThrow();
   });
 });

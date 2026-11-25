@@ -2,7 +2,7 @@
 // wall (times from internal/scene, widgets from the SCENES table in app.js).
 // Consumed by the seed and by resetToDefault; ids stay stable forever so
 // `?scene=` and SCENE_FORCE keep working.
-import type { SceneStart, SceneWidget } from "./validators";
+import type { ScenePalette, SceneStart, SceneWidget } from "./validators";
 
 export interface DefaultScene {
   readonly sceneId: string;
@@ -10,6 +10,7 @@ export interface DefaultScene {
   readonly name: string;
   readonly start: SceneStart;
   readonly widgets: readonly SceneWidget[];
+  readonly palette?: ScenePalette;
 }
 
 export const DEFAULT_SCENES: readonly DefaultScene[] = [
@@ -18,6 +19,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Morgen",
     start: { schoolDay: "06:45", weekend: "07:30" },
+    palette: "paper",
     widgets: [
       {
         id: "clock",
@@ -56,6 +58,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Tag",
     start: { schoolDay: "09:00", weekend: "10:00" },
+    palette: "paper",
     widgets: [
       {
         id: "clock",
@@ -77,27 +80,29 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Nachmittag",
     start: { schoolDay: "14:00", weekend: "14:00" },
+    palette: "paper",
     widgets: [
       {
         id: "clock",
         type: "clock",
         x: 0,
         y: 0,
-        w: 6,
-        h: 5,
-        props: { wide: false, hints: false },
+        w: 12,
+        h: 3,
+        props: { wide: true, hints: false },
       },
-      { id: "shopping", type: "shopping", x: 6, y: 0, w: 6, h: 5 },
+      { id: "dayband", type: "dayband", x: 0, y: 3, w: 12, h: 4 },
       {
         id: "school",
         type: "school",
         x: 0,
-        y: 5,
+        y: 7,
         w: 12,
-        h: 11,
+        h: 8,
         props: { mode: "full", mealDay: "today" },
       },
-      { id: "calendars", type: "calendars", x: 0, y: 16, w: 12, h: 8 },
+      { id: "week", type: "week", x: 0, y: 15, w: 12, h: 7 },
+      { id: "shopping", type: "shopping", x: 0, y: 22, w: 12, h: 2 },
     ],
   },
   {
@@ -105,6 +110,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Abend",
     start: { schoolDay: "19:00", weekend: "19:00" },
+    palette: "board",
     widgets: [
       {
         id: "clock",
