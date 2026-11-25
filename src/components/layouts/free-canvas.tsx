@@ -299,7 +299,7 @@ export function FreeCanvas({
     widget: SceneWidget,
     edges: readonly Edge[] | null,
   ): void => {
-    if (!event.isPrimary || event.button !== 0) {
+    if (!event.isPrimary || event.button !== 0 || !widgets.some((w) => w.id === widget.id)) {
       return
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -448,9 +448,9 @@ export function FreeCanvas({
             ))}
           </div>
           <div className="absolute inset-0">
+            {area !== null && (
             <AnimatePresence initial={false}>
-              {area !== null &&
-                shown.map((widget) => {
+              {shown.map((widget) => {
                   const lifted = live?.id === widget.id && live.dragBox !== null
                   return (
                     <CanvasTile
@@ -473,6 +473,7 @@ export function FreeCanvas({
                   )
                 })}
             </AnimatePresence>
+            )}
             <PreviewOutline outline={outline} />
           </div>
         </div>

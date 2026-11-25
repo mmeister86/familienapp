@@ -1,5 +1,5 @@
 import { createElement, type PointerEvent, type ReactNode } from "react"
-import { motion, useReducedMotion, type Transition } from "motion/react"
+import { motion, useIsPresent, useReducedMotion, type Transition } from "motion/react"
 import { cn } from "cn"
 import { Repeat } from "lucide-react"
 import type { Edge } from "@/lib/canvas-ops"
@@ -77,6 +77,8 @@ export function CanvasTile({
         widget.fallback)
 
   const reduced = useReducedMotion() === true
+  // An exiting tile (removed, fading out) is inert: no focus, no drag, no keys.
+  const present = useIsPresent()
   const transition: Transition = reduced
     ? INSTANT
     : lifted
@@ -89,11 +91,15 @@ export function CanvasTile({
 
   return (
     <motion.div
-      tabIndex={0}
+      tabIndex={present ? 0 : -1}
+      aria-hidden={present ? undefined : true}
       role="group"
       aria-label={`${name}, Spalte ${widget.x + 1}, Zeile ${widget.y + 1}, ${widget.w} × ${widget.h}`}
       data-widget-id={widget.id}
       onPointerDown={(event) => {
+        if (!present) {
+          return
+        }
         // Portaled popover content bubbles through React; only the tile's own DOM moves it.
         if (
           event.button !== 0 ||
@@ -104,12 +110,19 @@ export function CanvasTile({
         }
         onMoveStart(event, widget)
       }}
-      onKeyDown={(event) => onKeyDown(event, widget)}
+      onKeyDown={(event) => {
+        if (present) {
+          onKeyDown(event, widget)
+        }
+      }}
       className={cn(
-        "group relative touch-none rounded-xl border border-border bg-card p-3 select-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "absolute transition-shadow duration-200",
+        "group touch-none rounded-xl border border-border bg-card p-3 select-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "absolute transition-shadow duration-200 motion-reduce:transition-none",
+        !present && "pointer-events-none",
         raised && "z-10",
-        lifted ? "cursor-grabbing shadow-lg" : "cursor-grab",
+        lifted
+          ? "cursor-grabbing shadow-[0_12px_28px_-8px_rgb(0_0_0/0.28)] dark:shadow-[0_12px_28px_-8px_rgb(0_0_0/0.75)]"
+          : "cursor-grab",
       )}
       initial={reduced ? false : { ...box, opacity: 0, scale: ENTER_SCALE }}
       animate={{ ...box, opacity: 1, scale: lifted ? LIFT_SCALE : 1 }}
@@ -120,7 +133,7 @@ export function CanvasTile({
       }}
       transition={transition}
     >
-      {HANDLES.map((handle) => (
+      {!lifted && HANDLES.map((handle) => (
         <div
           key={handle.edges.join("")}
           data-handle={handle.edges.join("")}
