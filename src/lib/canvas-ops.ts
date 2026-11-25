@@ -277,3 +277,271 @@ export function applyDrop(
     fresh,
   ]
 }
+
+export type Edge = "n" | "e" | "s" | "w"
+
+/** Move a tile to a new top-left cell (clamped into the grid); null when blocked. */
+export function moveTile(
+  widgets: readonly SceneWidget[],
+  id: string,
+  to: Cell,
+): SceneWidget[] | null {
+  const tile = widgets.find((t) => t.id === id)
+  if (!tile) {
+    return null
+  }
+  const x = Math.max(0, Math.min(to.col, GRID.cols - tile.w))
+  const y = Math.max(0, Math.min(to.row, GRID.rows - tile.h))
+  if (x === tile.x && y === tile.y) {
+    return [...widgets]
+  }
+  const target = { x, y, w: tile.w, h: tile.h }
+  if (widgets.some((t) => t.id !== id && overlaps(t, target))) {
+    return null
+  }
+  return widgets.map((t) => (t.id === id ? { ...t, x, y } : t))
+}
+
+type Axis = "x" | "y"
+
+const EDGE: Record<Edge, { axis: Axis; outward: 1 | -1; horizontal: boolean }> = {
+  e: { axis: "x", outward: 1, horizontal: true },
+  w: { axis: "x", outward: -1, horizontal: true },
+  s: { axis: "y", outward: 1, horizontal: false },
+  n: { axis: "y", outward: -1, horizontal: false },
+}
+
+const lenKey = { x: "w", y: "h" } as const
+const crossOf = { x: "y", y: "x" } as const
+
+function extent(r: Rect, axis: Axis): [number, number] {
+  return [r[axis], r[axis] + r[lenKey[axis]]]
+}
+
+/** Largest k <= wanted by which the tile can grow over this edge; 0 when none. */
+function feasibleGrowth(
+  widgets: readonly SceneWidget[],
+  tile: SceneWidget,
+  edge: Edge,
+  wanted: number,
+  minima: Minima,
+): number {
+  const { axis, outward } = EDGE[edge]
+  const cross = crossOf[axis]
+  const limit = axis === "x" ? GRID.cols : GRID.rows
+  const [start, end] = extent(tile, axis)
+  const [crossStart, crossEnd] = extent(tile, cross)
+  for (let k = wanted; k > 0; k--) {
+    const line = outward > 0 ? end + k : start - k
+    if (line < 0 || line > limit) {
+      continue
+    }
+    const bandStart = outward > 0 ? end : line
+    const bandEnd = outward > 0 ? line : start
+    let ok = true
+    for (const other of widgets) {
+      if (other.id === tile.id) {
+        continue
+      }
+      const [o0, o1] = extent(other, axis)
+      const [c0, c1] = extent(other, cross)
+      if (o0 >= bandEnd || o1 <= bandStart || c0 >= crossEnd || c1 <= crossStart) {
+        continue
+      }
+      const min = minima(other.type)
+      const minLen = axis === "x" ? min.minW : min.minH
+      const newLen = outward > 0 ? o1 - line : line - o0
+      if (newLen < minLen) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      return k
+    }
+  }
+  return 0
+}
+
+function growEdge(
+  widgets: readonly SceneWidget[],
+  id: string,
+  edge: Edge,
+  k: number,
+): SceneWidget[] {
+  const { axis, outward } = EDGE[edge]
+  const len = lenKey[axis]
+  const cross = crossOf[axis]
+  const tile = widgets.find((t) => t.id === id)!
+  const [start, end] = extent(tile, axis)
+  const [crossStart, crossEnd] = extent(tile, cross)
+  const line = outward > 0 ? end + k : start - k
+  const bandStart = outward > 0 ? end : line
+  const bandEnd = outward > 0 ? line : start
+  return widgets.map((t) => {
+    if (t.id === id) {
+      return outward > 0
+        ? { ...t, [len]: t[len] + k }
+        : { ...t, [axis]: line, [len]: t[len] + k }
+    }
+    const [o0, o1] = extent(t, axis)
+    const [c0, c1] = extent(t, cross)
+    if (o0 >= bandEnd || o1 <= bandStart || c0 >= crossEnd || c1 <= crossStart) {
+      return t
+    }
+    return outward > 0
+      ? { ...t, [axis]: line, [len]: o1 - line }
+      : { ...t, [len]: line - o0 }
+  })
+}
+
+function shrinkEdge(
+  widgets: readonly SceneWidget[],
+  id: string,
+  edge: Edge,
+  k: number,
+  followers: ReadonlySet<string>,
+): SceneWidget[] {
+  const { axis, outward } = EDGE[edge]
+  const len = lenKey[axis]
+  return widgets.map((t) => {
+    if (t.id === id) {
+      return outward > 0
+        ? { ...t, [len]: t[len] - k }
+        : { ...t, [axis]: t[axis] + k, [len]: t[len] - k }
+    }
+    if (!followers.has(t.id)) {
+      return t
+    }
+    return outward > 0
+      ? { ...t, [axis]: t[axis] - k, [len]: t[len] + k }
+      : { ...t, [len]: t[len] + k }
+  })
+}
+
+/** Tiles flush against the edge whose extent along it lies within the tile's. */
+function followersOf(
+  widgets: readonly SceneWidget[],
+  tile: SceneWidget,
+  edge: Edge,
+): Set<string> {
+  const { axis, outward } = EDGE[edge]
+  const cross = crossOf[axis]
+  const [start, end] = extent(tile, axis)
+  const [crossStart, crossEnd] = extent(tile, cross)
+  const line = outward > 0 ? end : start
+  const ids = new Set<string>()
+  for (const other of widgets) {
+    if (other.id === tile.id) {
+      continue
+    }
+    const [o0, o1] = extent(other, axis)
+    const [c0, c1] = extent(other, cross)
+    const flush = outward > 0 ? o0 === line : o1 === line
+    if (flush && c0 >= crossStart && c1 <= crossEnd) {
+      ids.add(other.id)
+    }
+  }
+  return ids
+}
+
+/**
+ * Move edges of a tile by the pointer delta (cells, right/down positive),
+ * computed from the layout at drag start. Growing shrinks the tiles in the
+ * way down to their minimum; shrinking lets flush neighbours follow.
+ */
+export function resizeTile(
+  widgets: readonly SceneWidget[],
+  id: string,
+  edges: readonly Edge[],
+  delta: { dx: number; dy: number },
+  minima: Minima,
+): SceneWidget[] {
+  const start = widgets.find((t) => t.id === id)
+  if (!start) {
+    return [...widgets]
+  }
+  let current: SceneWidget[] = [...widgets]
+  for (const edge of new Set(edges)) {
+    const { axis, outward, horizontal } = EDGE[edge]
+    const growth = Math.trunc(horizontal ? delta.dx : delta.dy) * outward
+    const tile = current.find((t) => t.id === id)!
+    if (growth > 0) {
+      const k = feasibleGrowth(current, tile, edge, growth, minima)
+      if (k > 0) {
+        current = growEdge(current, id, edge, k)
+      }
+    } else if (growth < 0) {
+      const min = minima(tile.type)
+      const minLen = horizontal ? min.minW : min.minH
+      const k = Math.min(-growth, tile[lenKey[axis]] - minLen)
+      if (k > 0) {
+        current = shrinkEdge(current, id, edge, k, followersOf(widgets, start, edge))
+      }
+    }
+  }
+  return current
+}
+
+/** Remove a tile and let the tiles of one fully flush side grow into the gap. */
+export function removeTile(
+  widgets: readonly SceneWidget[],
+  id: string,
+): SceneWidget[] {
+  const gone = widgets.find((t) => t.id === id)
+  if (!gone) {
+    return [...widgets]
+  }
+  const rest = widgets.filter((t) => t.id !== id)
+  const sides: { side: Side; axis: Axis; outward: 1 | -1 }[] = [
+    { side: "left", axis: "x", outward: -1 },
+    { side: "top", axis: "y", outward: -1 },
+    { side: "right", axis: "x", outward: 1 },
+    { side: "bottom", axis: "y", outward: 1 },
+  ]
+  let best: { ids: Set<string>; axis: Axis; outward: 1 | -1 } | null = null
+  for (const { axis, outward } of sides) {
+    const cross = crossOf[axis]
+    const [start, end] = extent(gone, axis)
+    const [crossStart, crossEnd] = extent(gone, cross)
+    const line = outward > 0 ? end : start
+    const ids = new Set<string>()
+    let covered = 0
+    let qualifies = true
+    for (const t of rest) {
+      const [o0, o1] = extent(t, axis)
+      const [c0, c1] = extent(t, cross)
+      const flush = outward > 0 ? o0 === line : o1 === line
+      if (!flush || c0 >= crossEnd || c1 <= crossStart) {
+        continue
+      }
+      if (c0 < crossStart || c1 > crossEnd) {
+        qualifies = false
+        break
+      }
+      ids.add(t.id)
+      covered += c1 - c0
+    }
+    if (
+      qualifies &&
+      ids.size > 0 &&
+      covered === crossEnd - crossStart &&
+      (best === null || ids.size < best.ids.size)
+    ) {
+      best = { ids, axis, outward }
+    }
+  }
+  if (!best) {
+    return rest
+  }
+  const { ids, axis, outward } = best
+  const len = lenKey[axis]
+  return rest.map((t) => {
+    if (!ids.has(t.id)) {
+      return t
+    }
+    return outward > 0
+      ? { ...t, [axis]: gone[axis], [len]: t[len] + gone[len] }
+      : { ...t, [len]: t[len] + gone[len] }
+  })
+}

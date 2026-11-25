@@ -4,11 +4,15 @@ import {
   applyDrop,
   isValidLayout,
   minimaFrom,
+  moveTile,
   placeFree,
   planClickAdd,
   planDrop,
+  removeTile,
+  resizeTile,
   splitTile,
   tileAt,
+  type Edge,
   type Minima,
 } from "../../src/lib/canvas-ops.js";
 
@@ -286,4 +290,265 @@ describe("applyDrop", () => {
       applyDrop([], { kind: "blocked" }, { id: "n", type: "news" }),
     ).toBeNull();
   });
+});
+
+const clone = (l: SceneWidget[]) => JSON.parse(JSON.stringify(l)) as SceneWidget[];
+const rect = (l: SceneWidget[] | null, id: string) => {
+  const t = l?.find((x) => x.id === id);
+  return t && [t.x, t.y, t.w, t.h];
+};
+// "clock" minimum is 4x3, "shopping" 4x2; "tile" defaults to 1x1.
+const resize = (
+  l: SceneWidget[],
+  id: string,
+  edges: Edge[],
+  dx: number,
+  dy: number,
+) => {
+  const before = clone(l);
+  const out = resizeTile(l, id, edges, { dx, dy }, minima);
+  expect(l).toEqual(before);
+  expect(isValidLayout(out, minima)).toBe(true);
+  return out;
+};
+
+describe("moveTile", () => {
+  const base = () => [w("a", "tile", 0, 0, 3, 3), w("b", "tile", 6, 0, 3, 3)];
+  it("moves to a free cell", () => {
+    expect(rect(moveTile(base(), "a", { col: 2, row: 4 }), "a")).toEqual([2, 4, 3, 3]);
+  });
+  it("clamps into the grid", () => {
+    expect(rect(moveTile(base(), "a", { col: 20, row: 30 }), "a")).toEqual([9, 21, 3, 3]);
+    expect(rect(moveTile(base(), "a", { col: -4, row: -1 }), "a")).toEqual([0, 0, 3, 3]);
+  });
+  it("returns null onto another tile", () => {
+    expect(moveTile(base(), "a", { col: 5, row: 1 })).toBeNull();
+  });
+  it("does not block itself", () => {
+    expect(rect(moveTile(base(), "a", { col: 1, row: 0 }), "a")).toEqual([1, 0, 3, 3]);
+  });
+  it("keeps the list equal when the position is unchanged and does not mutate", () => {
+    const l = base();
+    const before = clone(l);
+    expect(moveTile(l, "a", { col: 0, row: 0 })).toEqual(before);
+    expect(l).toEqual(before);
+  });
+  it("returns null for an unknown id", () => {
+    expect(moveTile(base(), "zz", { col: 0, row: 0 })).toBeNull();
+  });
+});
+
+describe("resizeTile growing", () => {
+  it("takes free space on the right", () => {
+    const out = resize([w("a", "tile", 0, 0, 6, 5)], "a", ["e"], 3, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 9, 5]);
+  });
+  it("pushes a neighbour and stops at its minimum", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "clock", 6, 0, 6, 5)];
+    const one = resize(l, "a", ["e"], 1, 0);
+    expect(rect(one, "a")).toEqual([0, 0, 7, 5]);
+    expect(rect(one, "b")).toEqual([7, 0, 5, 5]);
+    const five = resize(l, "a", ["e"], 5, 0);
+    expect(rect(five, "a")).toEqual([0, 0, 8, 5]);
+    expect(rect(five, "b")).toEqual([8, 0, 4, 5]);
+  });
+  it("pushes a partly overlapping neighbour the same way", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "clock", 6, 3, 6, 5)];
+    const out = resize(l, "a", ["e"], 5, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([8, 3, 4, 5]);
+  });
+  it("takes a free gap first, then pushes to the minimum", () => {
+    const l = [w("a", "tile", 0, 0, 4, 5), w("b", "clock", 6, 0, 6, 5)];
+    const out = resize(l, "a", ["e"], 5, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([8, 0, 4, 5]);
+  });
+  it("stops at the grid edge", () => {
+    const out = resize([w("a", "tile", 0, 0, 10, 5)], "a", ["e"], 5, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 12, 5]);
+  });
+  it("grows south, pushing", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "clock", 0, 5, 6, 6)];
+    const out = resize(l, "a", ["s"], 0, 5);
+    expect(rect(out, "a")).toEqual([0, 0, 6, 8]);
+    expect(rect(out, "b")).toEqual([0, 8, 6, 3]);
+  });
+  it("grows west keeping the far edge and pushing", () => {
+    const l = [w("b", "clock", 0, 0, 6, 5), w("a", "tile", 6, 0, 6, 5)];
+    const out = resize(l, "a", ["w"], -5, 0);
+    expect(rect(out, "a")).toEqual([4, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([0, 0, 4, 5]);
+  });
+  it("grows north keeping the far edge and pushing", () => {
+    const l = [w("b", "clock", 0, 0, 6, 6), w("a", "tile", 0, 6, 6, 5)];
+    const out = resize(l, "a", ["n"], 0, -5);
+    expect(rect(out, "a")).toEqual([0, 3, 6, 8]);
+    expect(rect(out, "b")).toEqual([0, 0, 6, 3]);
+  });
+  it("does nothing when the neighbour is already at its minimum", () => {
+    const l = [w("a", "tile", 0, 0, 8, 5), w("b", "clock", 8, 0, 4, 5)];
+    expect(resize(l, "a", ["e"], 2, 0)).toEqual(l);
+  });
+  it("applies both edges of a corner", () => {
+    const out = resize([w("a", "tile", 0, 0, 3, 3)], "a", ["s", "e"], 1, 1);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 4]);
+  });
+  it("ignores deltas of edges not listed", () => {
+    const out = resize([w("a", "tile", 0, 0, 3, 3)], "a", ["e"], 1, 4);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 3]);
+  });
+});
+
+describe("resizeTile shrinking", () => {
+  it("lets a flush neighbour within the extent follow", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 5)];
+    const out = resize(l, "a", ["e"], -2, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
+    expect(rect(out, "b")).toEqual([4, 0, 8, 5]);
+  });
+  it("leaves a taller neighbour alone", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 8)];
+    const out = resize(l, "a", ["e"], -2, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
+    expect(rect(out, "b")).toEqual([6, 0, 6, 8]);
+  });
+  it("lets several followers follow", () => {
+    const l = [
+      w("a", "tile", 0, 0, 6, 5),
+      w("c", "tile", 6, 0, 6, 2),
+      w("d", "tile", 6, 2, 6, 3),
+    ];
+    const out = resize(l, "a", ["e"], -2, 0);
+    expect(rect(out, "c")).toEqual([4, 0, 8, 2]);
+    expect(rect(out, "d")).toEqual([4, 2, 8, 3]);
+  });
+  it("never goes below the minimum", () => {
+    const out = resize([w("a", "clock", 0, 0, 6, 5)], "a", ["e"], -10, 0);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
+  });
+  it("shrinks the west edge and lets the left follower follow", () => {
+    const l = [w("b", "tile", 0, 0, 6, 5), w("a", "tile", 6, 0, 6, 5)];
+    const out = resize(l, "a", ["w"], 2, 0);
+    expect(rect(out, "a")).toEqual([8, 0, 4, 5]);
+    expect(rect(out, "b")).toEqual([0, 0, 8, 5]);
+  });
+  it("shrinks the south edge and lets the follower below follow", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 0, 5, 6, 5)];
+    const out = resize(l, "a", ["s"], 0, -2);
+    expect(rect(out, "a")).toEqual([0, 0, 6, 3]);
+    expect(rect(out, "b")).toEqual([0, 3, 6, 7]);
+  });
+});
+
+describe("removeTile", () => {
+  it("fills with the single flush neighbour", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 5)];
+    const out = removeTile(l, "a");
+    expect(out).toEqual([w("b", "tile", 0, 0, 12, 5)]);
+    expect(l).toHaveLength(2);
+  });
+  it("grows two tiles that together cover a side", () => {
+    const l = [
+      w("a", "tile", 0, 0, 6, 5),
+      w("b", "tile", 6, 0, 6, 2),
+      w("c", "tile", 6, 2, 6, 3),
+    ];
+    const out = removeTile(l, "a");
+    expect(rect(out, "b")).toEqual([0, 0, 12, 2]);
+    expect(rect(out, "c")).toEqual([0, 2, 12, 3]);
+  });
+  it("prefers the side with fewer tiles (left over top)", () => {
+    const l = [
+      w("l", "tile", 0, 3, 3, 4),
+      w("x", "tile", 3, 3, 4, 4),
+      w("t1", "tile", 3, 0, 2, 3),
+      w("t2", "tile", 5, 0, 2, 3),
+    ];
+    const out = removeTile(l, "x");
+    expect(rect(out, "l")).toEqual([0, 3, 7, 4]);
+    expect(rect(out, "t1")).toEqual([3, 0, 2, 3]);
+  });
+  it("breaks ties as left, top, right, bottom", () => {
+    const l = [
+      w("t", "tile", 3, 0, 4, 3),
+      w("x", "tile", 3, 3, 4, 4),
+      w("r", "tile", 7, 3, 4, 4),
+    ];
+    const out = removeTile(l, "x");
+    expect(rect(out, "t")).toEqual([3, 0, 4, 7]);
+    expect(rect(out, "r")).toEqual([7, 3, 4, 4]);
+  });
+  it("keeps the gap when a neighbour is longer than the side", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 8)];
+    expect(removeTile(l, "a")).toEqual([l[1]]);
+    expect(removeTile(l, "a")[0]).toBe(l[1]);
+  });
+  it("keeps the gap when the side has holes", () => {
+    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 2)];
+    expect(rect(removeTile(l, "a"), "b")).toEqual([6, 0, 6, 2]);
+  });
+  it("removes the only tile and ignores unknown ids", () => {
+    expect(removeTile([w("a", "tile", 0, 0, 6, 5)], "a")).toEqual([]);
+    const l = [w("a", "tile", 0, 0, 6, 5)];
+    expect(removeTile(l, "zz")).toEqual(l);
+  });
+});
+
+function seeded(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe("random operations keep the layout valid", () => {
+  const starts: Record<string, () => SceneWidget[]> = {
+    afternoon,
+    scattered: () => [
+      w("s1", "clock", 1, 1, 5, 4),
+      w("s2", "shopping", 7, 6, 4, 3),
+      w("s3", "week", 2, 12, 8, 6),
+    ],
+  };
+  for (const [name, start] of Object.entries(starts)) {
+    it(`from ${name}`, () => {
+      const rnd = seeded(12345);
+      const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
+      const edgeSets: Edge[][] = [["n"], ["e"], ["s"], ["w"], ["s", "e"], ["n", "w"]];
+      let layout = start();
+      expect(isValidLayout(layout, minima)).toBe(true);
+      for (let i = 0; i < 300; i++) {
+        if (layout.length === 0) {
+          layout = start();
+        }
+        const id = layout[int(0, layout.length - 1)].id;
+        const before = clone(layout);
+        const op = rnd();
+        let next: SceneWidget[] | null;
+        if (op < 0.4) {
+          next = moveTile(layout, id, { col: int(-2, 13), row: int(-2, 25) });
+        } else if (op < 0.9) {
+          next = resizeTile(
+            layout,
+            id,
+            edgeSets[int(0, edgeSets.length - 1)],
+            { dx: int(-6, 6), dy: int(-6, 6) },
+            minima,
+          );
+        } else {
+          next = removeTile(layout, id);
+        }
+        expect(layout).toEqual(before);
+        if (next) {
+          expect(isValidLayout(next, minima)).toBe(true);
+          layout = next;
+        }
+      }
+    });
+  }
 });
