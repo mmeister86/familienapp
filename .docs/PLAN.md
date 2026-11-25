@@ -550,6 +550,8 @@ Decisions (2026-10-11, non-negotiable):
   auto-save drafts, publish/discard/preview/versions/reset/delete toolbar, Convex errors as toasts
 - [ ] Wall redesign mirror: catalog gains `dayband` (Tagesband, min 8 × 4) and `week` (Woche, min 6 × 5), `shopping`
   minimum drops to 4 × 2; built-in afternoon scene becomes clock / dayband / school / week / shopping
+- [ ] Palette per scene: optional `palette` (`paper` | `board`) on layout snapshots and the feed, "Farbwelt" select in the
+  builder header; built-ins morning/day/afternoon `paper`, evening `board`
   (see `.docs/FAMILY_APP.md`, `GET /dashboard/scenes`)
 
 **Done when:** a parent drags a widget onto the 12×24 canvas at 1440 px and the wall follows within 30 s of

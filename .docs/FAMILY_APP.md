@@ -185,6 +185,13 @@ runs from its start until the next start the same day. Shape details mirror
 the dashboard repo's `docs/FAMILY_APP.md` section of the same name; the shared
 fixture is `tests/fixtures/dashboard-scenes-v1.json`.
 
+Layout scenes may carry `palette: "paper" | "board"` (light / dark wall colour
+world). The key is omitted when unset (the wall then decides by time of day)
+and never present on the night scene; it is never `null` or `""`. Parents set
+it as "Farbwelt" in the scene builder header ("Automatisch" / "Papier (hell)" /
+"Tafel (dunkel)"); it belongs to the draft, is published, versioned and copied
+with the scene. Built-ins: `morning`, `day`, `afternoon` = `paper`, `evening` = `board`.
+
 Widget catalog (`convex/lib/dashboardWidgets.ts`, mirrored by the wall), minimum
 sizes in grid tiles:
 

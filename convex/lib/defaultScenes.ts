@@ -2,7 +2,7 @@
 // wall (times from internal/scene, widgets from the SCENES table in app.js).
 // Consumed by the seed and by resetToDefault; ids stay stable forever so
 // `?scene=` and SCENE_FORCE keep working.
-import type { SceneStart, SceneWidget } from "./validators";
+import type { ScenePalette, SceneStart, SceneWidget } from "./validators";
 
 export interface DefaultScene {
   readonly sceneId: string;
@@ -10,6 +10,7 @@ export interface DefaultScene {
   readonly name: string;
   readonly start: SceneStart;
   readonly widgets: readonly SceneWidget[];
+  readonly palette?: ScenePalette;
 }
 
 export const DEFAULT_SCENES: readonly DefaultScene[] = [
@@ -18,6 +19,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Morgen",
     start: { schoolDay: "06:45", weekend: "07:30" },
+    palette: "paper",
     widgets: [
       {
         id: "clock",
@@ -56,6 +58,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Tag",
     start: { schoolDay: "09:00", weekend: "10:00" },
+    palette: "paper",
     widgets: [
       {
         id: "clock",
@@ -77,6 +80,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Nachmittag",
     start: { schoolDay: "14:00", weekend: "14:00" },
+    palette: "paper",
     widgets: [
       {
         id: "clock",
@@ -106,6 +110,7 @@ export const DEFAULT_SCENES: readonly DefaultScene[] = [
     kind: "layout",
     name: "Abend",
     start: { schoolDay: "19:00", weekend: "19:00" },
+    palette: "board",
     widgets: [
       {
         id: "clock",

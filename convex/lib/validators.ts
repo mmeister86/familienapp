@@ -129,11 +129,18 @@ export const sceneStartValidator = v.object({
   weekend: v.union(v.string(), v.null()),
 });
 
+// Wall colour world of a layout scene. Unset = the wall decides by time of day.
+export const scenePaletteValidator = v.union(
+  v.literal("paper"),
+  v.literal("board"),
+);
+
 // Draft, published stand and version snapshot share one shape.
 export const sceneSnapshotFields = {
   name: v.string(),
   start: sceneStartValidator,
   widgets: v.array(sceneWidgetValidator),
+  palette: v.optional(scenePaletteValidator), // never stored as null or ""
 };
 export const sceneSnapshotValidator = v.object(sceneSnapshotFields);
 
@@ -143,6 +150,7 @@ export const scenesFeedSceneValidator = v.object({
   kind: v.union(v.literal("layout"), v.literal("night")),
   start: sceneStartValidator,
   widgets: v.optional(v.array(sceneWidgetValidator)), // absent for night
+  palette: v.optional(scenePaletteValidator), // absent for night or when unset
 });
 
 export const scenesFeedPreviewValidator = v.object({
@@ -160,6 +168,7 @@ export const scenesFeedValidator = v.object({
   preview: v.optional(scenesFeedPreviewValidator),
 });
 
+export type ScenePalette = Infer<typeof scenePaletteValidator>;
 export type ChildDay = Infer<typeof childDayValidator>;
 export type Lesson = Infer<typeof lessonValidator>;
 export type LessonChange = Infer<typeof lessonChangeValidator>;

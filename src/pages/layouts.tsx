@@ -377,6 +377,10 @@ export function LayoutsPage() {
           scene.kind === "night" ? null : (name) => updateForm({ name })
         }
         onStartChange={handleStartChange}
+        palette={form?.palette ?? scene.published?.palette}
+        onPaletteChange={
+          scene.kind === "night" ? null : (palette) => updateForm({ palette })
+        }
         barScenes={barScenes}
         error={scene.kind === "night" ? nightError : saveError}
       />
