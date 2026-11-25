@@ -926,7 +926,7 @@ describe("list and catalog", () => {
     const catalog = await t.query(api.dashboardScenes.catalog, {
       token: parent.token,
     });
-    expect(catalog).toHaveLength(7);
+    expect(catalog).toHaveLength(9);
     expect(catalog[0]).toEqual({
       type: "clock",
       name: "Uhr & Wetter",

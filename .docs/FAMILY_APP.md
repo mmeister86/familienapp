@@ -184,3 +184,22 @@ times are `HH:MM` (`null` = the scene does not run on those days); a scene
 runs from its start until the next start the same day. Shape details mirror
 the dashboard repo's `docs/FAMILY_APP.md` section of the same name; the shared
 fixture is `tests/fixtures/dashboard-scenes-v1.json`.
+
+Widget catalog (`convex/lib/dashboardWidgets.ts`, mirrored by the wall), minimum
+sizes in grid tiles:
+
+| Type        | Name                    | Min W × H | Settings                           |
+| ----------- | ----------------------- | --------- | ---------------------------------- |
+| `clock`     | Uhr & Wetter            | 4 × 3     | `wide`, `hints`                    |
+| `shopping`  | Einkaufsliste (Bring!)  | 4 × 2     | none                               |
+| `briefing`  | KI-Briefing             | 4 × 4     | `kind` (`today` / `tomorrow`)      |
+| `news`      | Nachrichten             | 4 × 3     | none                               |
+| `photos`    | Fotorahmen              | 4 × 4     | none                               |
+| `school`    | Schule & Essen          | 6 × 4     | `mode`, `mealDay`                  |
+| `calendars` | Kalender                | 6 × 4     | none                               |
+| `dayband`   | Tagesband               | 8 × 4     | none                               |
+| `week`      | Woche                   | 6 × 5     | none                               |
+
+Built-in `afternoon` scene (12 × 24): `clock` 12 × 3 (`wide: true`, `hints: false`),
+`dayband` 12 × 4, `school` 12 × 8 (`full`, today), `week` 12 × 7, `shopping` 12 × 2.
+Existing published scenes are not migrated; "Auf Standard zurücksetzen" applies it.

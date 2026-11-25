@@ -50,15 +50,17 @@ describe("widget catalog", () => {
     expect(GRID_ROWS).toBe(24);
   });
 
-  it("lists all seven widget types with German names and minimum sizes", () => {
+  it("lists all nine widget types with German names and minimum sizes", () => {
     expect(WIDGET_CATALOG).toEqual([
       { type: "clock", name: "Uhr & Wetter", minW: 4, minH: 3 },
-      { type: "shopping", name: "Einkaufsliste (Bring!)", minW: 4, minH: 4 },
+      { type: "shopping", name: "Einkaufsliste (Bring!)", minW: 4, minH: 2 },
       { type: "briefing", name: "KI-Briefing", minW: 4, minH: 4 },
       { type: "news", name: "Nachrichten", minW: 4, minH: 3 },
       { type: "photos", name: "Fotorahmen", minW: 4, minH: 4 },
       { type: "school", name: "Schule & Essen", minW: 6, minH: 4 },
       { type: "calendars", name: "Kalender", minW: 6, minH: 4 },
+      { type: "dayband", name: "Tagesband", minW: 8, minH: 4 },
+      { type: "week", name: "Woche", minW: 6, minH: 5 },
     ]);
   });
 
@@ -262,6 +264,55 @@ describe("assertValidWidgets", () => {
     ).not.toThrow();
   });
 
+  it("accepts dayband and week as fallback", () => {
+    for (const fallback of ["dayband", "week"]) {
+      expect(() => assertValidWidgets([widget({ fallback })])).not.toThrow();
+    }
+  });
+
+  it("accepts dayband and week at wall sizes and enforces their minima", () => {
+    const dayband = widget({
+      id: "dayband",
+      type: "dayband",
+      props: undefined,
+      w: 12,
+      h: 4,
+    });
+    const week = widget({
+      id: "week",
+      type: "week",
+      props: undefined,
+      y: 4,
+      w: 12,
+      h: 7,
+    });
+    expect(() => assertValidWidgets([dayband, week])).not.toThrow();
+    expect(() => assertValidWidgets([{ ...dayband, w: 6 }])).toThrow(
+      '„Tagesband" braucht mindestens 8 × 4 Kacheln.',
+    );
+  });
+
+  it("rejects settings on dayband", () => {
+    expect(() =>
+      assertValidWidgets([
+        widget({ type: "dayband", props: { wide: true } }),
+      ]),
+    ).toThrow('„Tagesband": unbekannte Einstellung „wide".');
+  });
+
+  it("lets the shopping strip shrink to 4 x 2", () => {
+    const shopping = widget({
+      id: "shopping",
+      type: "shopping",
+      props: undefined,
+      h: 2,
+    });
+    expect(() => assertValidWidgets([shopping])).not.toThrow();
+    expect(() => assertValidWidgets([{ ...shopping, h: 1 }])).toThrow(
+      '„Einkaufsliste (Bring!)" braucht mindestens 4 × 2 Kacheln.',
+    );
+  });
+
   it("rejects fallbacks that need their own settings", () => {
     for (const fallback of ["briefing", "school"]) {
       expect(() =>
@@ -378,6 +429,33 @@ describe("default scenes seed data", () => {
     assertDayTypesCovered(
       DEFAULT_SCENES.map((s) => ({ kind: s.kind, start: s.start })),
     );
+  });
+
+  it("builds the afternoon scene as clock, dayband, school, week, shopping", () => {
+    const afternoon = DEFAULT_SCENES.find((s) => s.sceneId === "afternoon");
+    expect(afternoon?.widgets).toEqual([
+      {
+        id: "clock",
+        type: "clock",
+        x: 0,
+        y: 0,
+        w: 12,
+        h: 3,
+        props: { wide: true, hints: false },
+      },
+      { id: "dayband", type: "dayband", x: 0, y: 3, w: 12, h: 4 },
+      {
+        id: "school",
+        type: "school",
+        x: 0,
+        y: 7,
+        w: 12,
+        h: 8,
+        props: { mode: "full", mealDay: "today" },
+      },
+      { id: "week", type: "week", x: 0, y: 15, w: 12, h: 7 },
+      { id: "shopping", type: "shopping", x: 0, y: 22, w: 12, h: 2 },
+    ]);
   });
 
   it("shows weather hints only in the morning", () => {

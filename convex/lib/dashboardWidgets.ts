@@ -12,6 +12,8 @@ export const WIDGET_TYPES = [
   "photos",
   "school",
   "calendars",
+  "dayband",
+  "week",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -25,12 +27,14 @@ export interface WidgetDef {
 
 export const WIDGET_CATALOG: readonly WidgetDef[] = [
   { type: "clock", name: "Uhr & Wetter", minW: 4, minH: 3 },
-  { type: "shopping", name: "Einkaufsliste (Bring!)", minW: 4, minH: 4 },
+  { type: "shopping", name: "Einkaufsliste (Bring!)", minW: 4, minH: 2 },
   { type: "briefing", name: "KI-Briefing", minW: 4, minH: 4 },
   { type: "news", name: "Nachrichten", minW: 4, minH: 3 },
   { type: "photos", name: "Fotorahmen", minW: 4, minH: 4 },
   { type: "school", name: "Schule & Essen", minW: 6, minH: 4 },
   { type: "calendars", name: "Kalender", minW: 6, minH: 4 },
+  { type: "dayband", name: "Tagesband", minW: 8, minH: 4 },
+  { type: "week", name: "Woche", minW: 6, minH: 5 },
 ];
 
 export function widgetDef(type: string): WidgetDef | undefined {
