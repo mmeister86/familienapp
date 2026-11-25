@@ -149,7 +149,7 @@ export function SceneHeader({
             />
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Hell markiert: diese Szene
+            Hervorgehoben: diese Szene
           </p>
         </div>
       </div>
