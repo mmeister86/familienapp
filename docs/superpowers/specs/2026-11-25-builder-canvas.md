@@ -45,9 +45,18 @@ split on its bottom or right side (whichever keeps both parts larger).
 
 ## Moving a tile
 
-Drag the tile body. It moves to free cells only, clamped to the grid;
+Drag the tile body. Over free cells it moves, clamped to the grid;
 positions that would overlap show the red outline and releasing there leaves
-the tile where it was. Tiles do not swap.
+the tile where it was.
+
+Moving the pointer onto another tile splits that tile, exactly like dropping
+a new widget from the sidebar (the layout is looked at without the dragged
+tile): the target shrinks to its reduced rectangle and the dragged tile takes
+the added rectangle, shown as a green outline with the tile's name. It keeps
+its id, type, props and fallback but not its old size. If no split fits, the
+outline is red with "Kein Platz" and releasing changes nothing. The old place
+simply becomes free; neighbours do not grow into it, and tiles still do not
+swap. Escape cancels. Arrow-key moves only use free cells.
 
 ## Resizing a tile
 

@@ -302,6 +302,73 @@ export function moveTile(
   return widgets.map((t) => (t.id === id ? { ...t, x, y } : t))
 }
 
+export type MovePlan =
+  | { kind: "move"; widgets: SceneWidget[] }
+  | {
+      kind: "split"
+      widgets: SceneWidget[]
+      targetId: string
+      side: Side
+      added: Rect
+    }
+  | { kind: "blocked"; rect: Rect }
+
+/**
+ * Where a dragged tile ends up. Over another tile (looked up without the
+ * dragged one) that tile is split like for a sidebar drop and the dragged tile
+ * takes the added part; elsewhere it moves to `to` as moveTile does. The old
+ * place just becomes free. `blocked.rect` is what to outline in red.
+ */
+export function planMove(
+  widgets: readonly SceneWidget[],
+  id: string,
+  to: Cell,
+  point: { x: number; y: number },
+  minima: Minima,
+): MovePlan {
+  const cell: Cell = {
+    col: Math.min(GRID.cols - 1, Math.floor(point.x)),
+    row: Math.min(GRID.rows - 1, Math.floor(point.y)),
+  }
+  const pointerCell: Rect = { x: cell.col, y: cell.row, w: 1, h: 1 }
+  const tile = widgets.find((t) => t.id === id)
+  if (!tile) {
+    return { kind: "blocked", rect: pointerCell }
+  }
+  const rest = widgets.filter((t) => t.id !== id)
+  if (tileAt(rest, cell)) {
+    const plan = planDrop(rest, tile.type, point, minima)
+    if (plan.kind !== "split") {
+      return { kind: "blocked", rect: pointerCell }
+    }
+    return {
+      kind: "split",
+      targetId: plan.targetId,
+      side: plan.side,
+      added: plan.added,
+      widgets: widgets.map((t) => {
+        if (t.id === id) {
+          return { ...t, ...plan.added }
+        }
+        return t.id === plan.targetId ? { ...t, ...plan.target } : t
+      }),
+    }
+  }
+  const moved = moveTile(widgets, id, to)
+  if (moved !== null) {
+    return { kind: "move", widgets: moved }
+  }
+  return {
+    kind: "blocked",
+    rect: {
+      x: Math.max(0, Math.min(to.col, GRID.cols - tile.w)),
+      y: Math.max(0, Math.min(to.row, GRID.rows - tile.h)),
+      w: tile.w,
+      h: tile.h,
+    },
+  }
+}
+
 type Axis = "x" | "y"
 
 const EDGE: Record<Edge, { axis: Axis; outward: 1 | -1; horizontal: boolean }> = {

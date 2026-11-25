@@ -8,6 +8,7 @@ import {
   placeFree,
   planClickAdd,
   planDrop,
+  planMove,
   removeTile,
   resizeTile,
   splitTile,
@@ -338,6 +339,102 @@ describe("moveTile", () => {
   });
 });
 
+describe("planMove", () => {
+  const news = (): SceneWidget =>
+    ({ ...w("news", "news", 0, 0, 4, 3), props: { n: 1 }, fallback: { kind: "hide" } }) as SceneWidget;
+  const layoutA = (): SceneWidget[] => [news(), w("school", "school", 0, 5, 12, 8)];
+  const cellOf = (p: { x: number; y: number }) => ({ col: Math.floor(p.x), row: Math.floor(p.y) });
+
+  it("splits the tile under the pointer near its right edge", () => {
+    const l = layoutA();
+    const before = clone(l);
+    const point = { x: 10.5, y: 9.0 };
+    const plan = planMove(l, "news", cellOf(point), point, minima);
+    expect(l).toEqual(before);
+    if (plan.kind !== "split") throw new Error(plan.kind);
+    expect(plan.side).toBe("right");
+    expect(plan.targetId).toBe("school");
+    expect(plan.added).toEqual({ x: 6, y: 5, w: 6, h: 8 });
+    expect(rect(plan.widgets, "school")).toEqual([0, 5, 6, 8]);
+    expect(rect(plan.widgets, "news")).toEqual([6, 5, 6, 8]);
+    expect(plan.widgets.map((t) => t.id)).toEqual(["news", "school"]);
+    const moved = plan.widgets[0] as SceneWidget;
+    expect(moved.props).toEqual({ n: 1 });
+    expect(moved.fallback).toEqual({ kind: "hide" });
+    expect(moved.type).toBe("news");
+    expect(isValidLayout(plan.widgets, minima)).toBe(true);
+    expect(tileAt(plan.widgets, { col: 0, row: 0 })).toBeUndefined();
+  });
+
+  it("splits near the bottom edge", () => {
+    const point = { x: 6.0, y: 12.6 };
+    const plan = planMove(layoutA(), "news", cellOf(point), point, minima);
+    if (plan.kind !== "split") throw new Error(plan.kind);
+    expect(plan.side).toBe("bottom");
+    expect(rect(plan.widgets, "school")).toEqual([0, 5, 12, 4]);
+    expect(rect(plan.widgets, "news")).toEqual([0, 9, 12, 4]);
+  });
+
+  it("keeps untouched tiles by identity", () => {
+    const l = [...layoutA(), w("other", "shopping", 0, 20, 4, 2)];
+    const point = { x: 10.5, y: 9.0 };
+    const plan = planMove(l, "news", cellOf(point), point, minima);
+    expect(plan.kind).toBe("split");
+    if (plan.kind === "blocked") return;
+    expect(plan.widgets[2]).toBe(l[2]);
+  });
+
+  it("is blocked when no split fits and reports the pointer cell", () => {
+    const l = [w("n", "news", 0, 0, 4, 3), w("shop", "shopping", 0, 22, 12, 2)];
+    const before = clone(l);
+    const point = { x: 5.5, y: 22.5 };
+    const plan = planMove(l, "n", { col: 5, row: 22 }, point, minima);
+    expect(plan).toEqual({ kind: "blocked", rect: { x: 5, y: 22, w: 1, h: 1 } });
+    expect(l).toEqual(before);
+  });
+
+  it("is blocked when the dragged type fits no split of the target", () => {
+    const l = [w("d", "dayband", 0, 0, 8, 4), w("t", "tile", 0, 6, 6, 8)];
+    const point = { x: 3, y: 10 };
+    expect(planMove(l, "d", cellOf(point), point, minima).kind).toBe("blocked");
+  });
+
+  it("moves plainly over a free cell", () => {
+    const point = { x: 5.2, y: 1.0 };
+    const plan = planMove(layoutA(), "news", { col: 5, row: 0 }, point, minima);
+    if (plan.kind !== "move") throw new Error(plan.kind);
+    expect(rect(plan.widgets, "news")).toEqual([5, 0, 4, 3]);
+    expect((plan.widgets[0] as SceneWidget).fallback).toEqual({ kind: "hide" });
+  });
+
+  it("over its own original area the layout stays equal", () => {
+    const l = layoutA();
+    const point = { x: 1.5, y: 1.5 };
+    const plan = planMove(l, "news", { col: 0, row: 0 }, point, minima);
+    if (plan.kind !== "move") throw new Error(plan.kind);
+    expect(plan.widgets).toEqual(l);
+  });
+
+  it("blocks a plain move that overlaps and returns the attempted rectangle", () => {
+    const l = [w("news", "news", 0, 0, 4, 3), w("clock", "clock", 4, 0, 8, 3)];
+    const plan = planMove(l, "news", { col: 2, row: 1 }, { x: 2.0, y: 4.0 }, minima);
+    expect(plan).toEqual({ kind: "blocked", rect: { x: 2, y: 1, w: 4, h: 3 } });
+  });
+
+  it("clamps the attempted rectangle into the grid", () => {
+    const l = [w("news", "news", 0, 0, 4, 3), w("clock", "clock", 8, 20, 4, 3)];
+    const plan = planMove(l, "news", { col: 20, row: 30 }, { x: 5.5, y: 1.5 }, minima);
+    expect(plan).toEqual({ kind: "blocked", rect: { x: 8, y: 21, w: 4, h: 3 } });
+  });
+
+  it("is blocked at the pointer cell for an unknown id", () => {
+    expect(planMove(layoutA(), "zz", { col: 0, row: 0 }, { x: 12, y: 24 }, minima)).toEqual({
+      kind: "blocked",
+      rect: { x: 11, y: 23, w: 1, h: 1 },
+    });
+  });
+});
+
 describe("resizeTile growing", () => {
   it("takes free space on the right", () => {
     const out = resize([w("a", "tile", 0, 0, 6, 5)], "a", ["e"], 3, 0);
@@ -572,6 +669,16 @@ describe("random operations keep the layout valid", () => {
         let next: SceneWidget[] | null;
         if (op < 0.4) {
           next = moveTile(layout, id, { col: int(-2, 13), row: int(-2, 25) });
+        } else if (op < 0.65) {
+          const point = { x: rnd() * 12, y: rnd() * 24 };
+          const plan = planMove(
+            layout,
+            id,
+            { col: Math.floor(point.x) + int(-3, 3), row: Math.floor(point.y) + int(-3, 3) },
+            point,
+            minima,
+          );
+          next = plan.kind === "blocked" ? null : plan.widgets;
         } else if (op < 0.9) {
           next = resizeTile(
             layout,

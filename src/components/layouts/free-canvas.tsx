@@ -14,7 +14,9 @@ import {
   minimaFrom,
   moveTile,
   planDrop,
+  planMove,
   resizeTile,
+  tileAt,
   type DropPlan,
   type Edge,
   type Rect,
@@ -37,7 +39,14 @@ type Drag = {
   py: number
 }
 
-type Live = { id: string; widgets: SceneWidget[]; blocked: Rect | null }
+type Live = {
+  id: string
+  widgets: SceneWidget[]
+  /** Red outline: where the tile does not fit; labelled when a split was refused. */
+  blocked: { rect: Rect; label?: string } | null
+  /** Green outline: the part a moved tile takes when it splits another tile. */
+  split: { rect: Rect; type: string } | null
+}
 
 type DropHover = { type: string; plan: DropPlan; point: { x: number; y: number } }
 
@@ -175,7 +184,7 @@ export function FreeCanvas({
     const box = gridRef.current?.getBoundingClientRect()
     const tile = drag.start.find((t) => t.id === drag.id)
     if (!box || !tile) {
-      return { id: drag.id, widgets: drag.start, blocked: null }
+      return { id: drag.id, widgets: drag.start, blocked: null, split: null }
     }
     const dx = deltaCells(drag.px, event.clientX, box.width / GRID.cols)
     const dy = deltaCells(drag.py, event.clientY, box.height / GRID.rows)
@@ -184,21 +193,35 @@ export function FreeCanvas({
         id: drag.id,
         widgets: resizeTile(drag.start, drag.id, drag.edges, { dx, dy }, minima),
         blocked: null,
+        split: null,
       }
     }
-    const moved = moveTile(drag.start, drag.id, { col: tile.x + dx, row: tile.y + dy })
-    if (moved !== null) {
-      return { id: drag.id, widgets: moved, blocked: null }
+    const point = pointToGrid(event.clientX, event.clientY, box)
+    const plan = planMove(
+      drag.start,
+      drag.id,
+      { col: tile.x + dx, row: tile.y + dy },
+      point,
+      minima,
+    )
+    if (plan.kind === "blocked") {
+      const refusedSplit =
+        tileAt(
+          drag.start.filter((t) => t.id !== drag.id),
+          { col: Math.floor(point.x), row: Math.floor(point.y) },
+        ) !== undefined
+      return {
+        id: drag.id,
+        widgets: drag.start,
+        blocked: refusedSplit ? { rect: plan.rect, label: "Kein Platz" } : { rect: plan.rect },
+        split: null,
+      }
     }
     return {
       id: drag.id,
-      widgets: drag.start,
-      blocked: {
-        x: Math.min(Math.max(tile.x + dx, 0), GRID.cols - tile.w),
-        y: Math.min(Math.max(tile.y + dy, 0), GRID.rows - tile.h),
-        w: tile.w,
-        h: tile.h,
-      },
+      widgets: plan.widgets,
+      blocked: null,
+      split: plan.kind === "split" ? { rect: plan.added, type: tile.type } : null,
     }
   }
 
@@ -218,7 +241,7 @@ export function FreeCanvas({
       px: event.clientX,
       py: event.clientY,
     }
-    setLive({ id: widget.id, widgets, blocked: null })
+    setLive({ id: widget.id, widgets, blocked: null, split: null })
   }
 
   const onPointerCancel = (): void => {
@@ -345,7 +368,18 @@ export function FreeCanvas({
               />
             ))}
             {live?.blocked != null && (
-              <PreviewOutline rect={live.blocked} tone="blocked" />
+              <PreviewOutline
+                rect={live.blocked.rect}
+                tone="blocked"
+                label={live.blocked.label}
+              />
+            )}
+            {live?.split != null && (
+              <PreviewOutline
+                rect={live.split.rect}
+                tone="ok"
+                label={nameOf(live.split.type)}
+              />
             )}
             {drop !== null && drop.plan.kind !== "blocked" && (
               <PreviewOutline rect={drop.plan.added} tone="ok" label={nameOf(drop.type)} />
