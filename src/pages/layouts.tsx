@@ -3,17 +3,19 @@ import { useMutation, useQuery } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { useSession } from "@/hooks/useSession"
 import { useToasts } from "@/hooks/useToasts"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { DayKind } from "@/lib/scene-schedule"
+import { defaultPropsFor, headerPalette } from "@/lib/scene-layout"
 import {
-  applyLayoutChange,
-  defaultPropsFor,
-  firstFreeSpot,
-  headerPalette,
-} from "@/lib/scene-layout"
-import type { Layout } from "react-grid-layout/legacy"
+  applyDrop,
+  minimaFrom,
+  planClickAdd,
+  removeTile,
+  type DropPlan,
+} from "@/lib/canvas-ops"
 import { defaultScene } from "../../convex/lib/defaultScenes"
 import type {
   SceneStart,
@@ -21,7 +23,8 @@ import type {
 } from "../../convex/lib/validators"
 import { ConfirmDialog } from "@/components/layouts/confirm-dialog"
 import { NewSceneDialog } from "@/components/layouts/new-scene-dialog"
-import { SceneCanvas } from "@/components/layouts/scene-canvas"
+import { CanvasStage, EditorFrame } from "@/components/layouts/editor-frame"
+import { FreeCanvas } from "@/components/layouts/free-canvas"
 import { SceneHeader } from "@/components/layouts/scene-header"
 import { SceneTabs } from "@/components/layouts/scene-tabs"
 import { SceneToolbar } from "@/components/layouts/scene-toolbar"
@@ -62,6 +65,7 @@ export function LayoutsPage() {
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [previewUntil, setPreviewUntil] = useState<number | null>(null)
   const draggedType = useRef<string | null>(null)
   // Latest night times, including saves still in flight: overlapping edits
@@ -82,8 +86,50 @@ export function LayoutsPage() {
     explicitId !== null && scenes?.some((s) => s.sceneId === explicitId)
       ? explicitId
       : (scenes?.[0]?.sceneId ?? null)
-  const { scene, form, updateForm, revert, saveStatus, saveError } =
-    useSceneForm(token, scenes, selectedId)
+  const {
+    scene,
+    form,
+    updateForm,
+    updateLayout,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    revert,
+    saveStatus,
+    saveError,
+  } = useSceneForm(token, scenes, selectedId)
+
+  // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes; left alone while typing or
+  // while a dialog is open (same rules as the global shortcuts).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.key.toLowerCase() !== "z"
+      ) {
+        return
+      }
+      const target = event.target
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      if (typing || document.querySelector('[role="dialog"]') !== null) {
+        return
+      }
+      event.preventDefault()
+      if (event.shiftKey) {
+        redo()
+      } else {
+        undo()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [undo, redo])
 
   if (!token || !scenes || !catalog) {
     return (
@@ -159,59 +205,33 @@ export function LayoutsPage() {
     )
   }
 
-  const handleLayoutChange = (layout: Layout): void => {
-    // Functional: RGL fires this in the same tick as onDrop, before the
-    // re-render, so render-scope state would drop the new tile.
-    updateForm((prev) => ({ widgets: applyLayoutChange(prev.widgets, layout) }))
-  }
-
-  const handleDropWidget = (
-    type: string,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ): void => {
+  const addWidget = (type: string, plan: DropPlan): void => {
     if (!form || form.widgets.some((widget) => widget.type === type)) {
       return
     }
-    const id = newWidgetId(form.widgets.map((widget) => widget.id))
-    updateForm({
-      widgets: [
-        ...form.widgets,
-        { id, type, x, y, w, h, props: defaultPropsFor(type) },
-      ],
+    const next = applyDrop(form.widgets, plan, {
+      id: newWidgetId(form.widgets.map((widget) => widget.id)),
+      type,
+      props: defaultPropsFor(type),
     })
+    if (next) {
+      updateLayout(next)
+    }
   }
 
   const handleAddWidget = (type: string): void => {
-    if (!form) {
+    if (!form || form.widgets.some((widget) => widget.type === type)) {
       return
     }
-    const def = catalog.find((entry) => entry.type === type)
-    if (!def || form.widgets.some((widget) => widget.type === type)) {
+    const plan = planClickAdd(form.widgets, type, minimaFrom(catalog))
+    if (plan.kind === "blocked") {
+      notify(
+        "error",
+        "Kein Platz frei — erst eine Kachel verkleinern oder entfernen.",
+      )
       return
     }
-    const spot = firstFreeSpot(form.widgets, def.minW, def.minH)
-    if (!spot) {
-      notify("error", "Kein Platz frei — erst eine Kachel entfernen.")
-      return
-    }
-    const id = newWidgetId(form.widgets.map((widget) => widget.id))
-    updateForm({
-      widgets: [
-        ...form.widgets,
-        {
-          id,
-          type,
-          x: spot.x,
-          y: spot.y,
-          w: def.minW,
-          h: def.minH,
-          props: defaultPropsFor(type),
-        },
-      ],
-    })
+    addWidget(type, plan)
   }
 
   const handleUpdateWidget = (
@@ -221,8 +241,8 @@ export function LayoutsPage() {
     if (!form) {
       return
     }
-    updateForm({
-      widgets: form.widgets.map((widget) => {
+    updateLayout(
+      form.widgets.map((widget) => {
         if (widget.id !== id) {
           return widget
         }
@@ -232,14 +252,14 @@ export function LayoutsPage() {
         }
         return next
       }),
-    })
+    )
   }
 
   const handleRemoveWidget = (id: string): void => {
     if (!form) {
       return
     }
-    updateForm({ widgets: form.widgets.filter((widget) => widget.id !== id) })
+    updateLayout(removeTile(form.widgets, id))
   }
 
   const withToken = <T,>(fn: (token: string) => Promise<T>): void => {
@@ -340,92 +360,127 @@ export function LayoutsPage() {
   }
   const saving = saveStatus === "saving"
 
+  const isNight = scene.kind === "night"
+  const nightCard = (
+    <div className="mx-auto w-full max-w-[600px] space-y-3 rounded-xl border border-border bg-card p-6">
+      <div className="text-sm font-medium">Nacht-Ansicht</div>
+      <p className="text-sm text-muted-foreground">
+        Uhr, Wetter, Hintergrundbild — die Ansicht selbst lässt sich nicht
+        umbauen. Zeitänderungen gelten sofort.
+      </p>
+      {nightUndo !== null && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm">Zeiten geändert.</span>
+          <Button variant="outline" size="sm" onClick={handleNightUndo}>
+            Rückgängig
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+  const frameError = isNight ? nightError : saveError
+
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <PageHeader
         title="Wand-Szenen"
         subtitle="Zeitplan und Kachel-Layouts für das Wanddisplay."
-      />
-      <div className="flex items-center justify-between gap-4">
-        <SceneTabs
-          scenes={scenes}
-          selectedId={selectedId}
-          onSelect={setExplicitId}
-        />
-        <Button variant="outline" onClick={() => setNewOpen(true)}>
-          Neue Szene
-        </Button>
-      </div>
-      <SceneToolbar
-        saveStatus={saveStatus}
-        hasDraft={scene.draft !== null}
-        isNight={scene.kind === "night"}
-        isSeeded={defaultScene(sceneId) !== undefined}
-        busy={saving}
-        previewUntil={previewUntil}
-        onPublish={handlePublish}
-        onDiscard={() => setConfirmDiscard(true)}
-        onPreview={handlePreview}
-        onOpenVersions={() => setVersionsOpen(true)}
-        onResetDefault={() => setConfirmReset(true)}
-        onDelete={() => setConfirmDelete(true)}
-      />
-      <SceneHeader
-        scene={scene}
-        name={headerName}
-        start={headerStart}
-        onNameChange={
-          scene.kind === "night" ? null : (name) => updateForm({ name })
+        actions={
+          <Button variant="outline" onClick={() => setNewOpen(true)}>
+            <Plus aria-hidden="true" />
+            Neue Szene
+          </Button>
         }
-        onStartChange={handleStartChange}
-        palette={headerPalette(form, scene.published)}
-        onPaletteChange={
-          scene.kind === "night" ? null : (palette) => updateForm({ palette })
-        }
-        barScenes={barScenes}
-        error={scene.kind === "night" ? nightError : saveError}
       />
-      {scene.kind === "night" ? (
-        <div className="max-w-[600px] space-y-3 rounded-xl border border-border bg-card p-6">
-          <div className="text-sm font-medium">Nacht-Ansicht</div>
-          <p className="text-sm text-muted-foreground">
-            Uhr, Wetter, Hintergrundbild — die Ansicht selbst lässt sich nicht
-            umbauen. Zeitänderungen gelten sofort.
-          </p>
-          {nightUndo !== null && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Zeiten geändert.</span>
-              <Button variant="outline" size="sm" onClick={handleNightUndo}>
-                Rückgängig
-              </Button>
-            </div>
-          )}
-        </div>
-      ) : (
-        form !== null && (
-          <div className="flex gap-6">
+      <SceneTabs
+        scenes={scenes}
+        selectedId={selectedId}
+        onSelect={setExplicitId}
+      />
+      <EditorFrame
+        topBar={
+          <SceneToolbar
+            name={headerName}
+            saveStatus={saveStatus}
+            hasDraft={scene.draft !== null}
+            isNight={isNight}
+            isSeeded={defaultScene(sceneId) !== undefined}
+            busy={saving}
+            previewUntil={previewUntil}
+            onPublish={handlePublish}
+            onDiscard={() => setConfirmDiscard(true)}
+            onPreview={handlePreview}
+            onOpenVersions={() => setVersionsOpen(true)}
+            onResetDefault={() => setConfirmReset(true)}
+            onDelete={() => setConfirmDelete(true)}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            canClear={!isNight && (form?.widgets.length ?? 0) > 0}
+            onUndo={undo}
+            onRedo={redo}
+            onClear={() => setConfirmClear(true)}
+          />
+        }
+        alert={
+          frameError !== null && (
+            <p
+              role="alert"
+              className="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive"
+            >
+              {frameError}
+            </p>
+          )
+        }
+        library={
+          isNight || form === null ? null : (
             <WidgetSidebar
               catalog={catalog}
               placedTypes={form.widgets.map((widget) => widget.type)}
               onDragStart={(type) => {
                 draggedType.current = type
               }}
+              onDragEnd={() => {
+                draggedType.current = null
+              }}
               onAdd={handleAddWidget}
             />
-            <div className="min-w-0 flex-1">
-              <SceneCanvas
-                widgets={form.widgets}
-                catalog={catalog}
-                draggedTypeRef={draggedType}
-                onLayoutChange={handleLayoutChange}
-                onDropWidget={handleDropWidget}
-                onUpdateWidget={handleUpdateWidget}
-                onRemoveWidget={handleRemoveWidget}
-              />
-            </div>
-          </div>
-        )
-      )}
+          )
+        }
+        workbench={
+          isNight ? (
+            <div className="flex min-h-[28rem] items-center">{nightCard}</div>
+          ) : (
+            form !== null && (
+              <CanvasStage>
+                <FreeCanvas
+                  key={selectedId}
+                  widgets={form.widgets}
+                  catalog={catalog}
+                  draggedTypeRef={draggedType}
+                  onChange={updateLayout}
+                  onAddWidget={addWidget}
+                  onUpdateWidget={handleUpdateWidget}
+                  onRemoveWidget={handleRemoveWidget}
+                />
+              </CanvasStage>
+            )
+          )
+        }
+        inspector={
+          <SceneHeader
+            scene={scene}
+            name={headerName}
+            start={headerStart}
+            onNameChange={isNight ? null : (name) => updateForm({ name })}
+            onStartChange={handleStartChange}
+            palette={headerPalette(form, scene.published)}
+            onPaletteChange={
+              isNight ? null : (palette) => updateForm({ palette })
+            }
+            barScenes={barScenes}
+          />
+        }
+      />
       <VersionHistory
         token={token}
         sceneId={selectedId}
@@ -470,6 +525,14 @@ export function LayoutsPage() {
         message="Die Szene verschwindet sofort von der Wand. Das lässt sich nicht rückgängig machen."
         confirmLabel="Löschen"
         onConfirm={handleDelete}
+      />
+      <ConfirmDialog
+        open={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Szene leeren?"
+        message="Alle Kacheln dieser Szene entfernen? Das lässt sich mit „Rückgängig“ zurücknehmen."
+        confirmLabel="Leeren"
+        onConfirm={() => updateLayout([])}
       />
       <Toaster toasts={toasts} onDismiss={dismiss} />
     </section>
