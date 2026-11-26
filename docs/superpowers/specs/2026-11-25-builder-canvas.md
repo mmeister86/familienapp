@@ -66,10 +66,9 @@ Handles on all four edges and four corners.
   the way and is adjacent to the moving edge has its near edge pushed and
   shrinks, down to its minimum. The edge stops where the first neighbour
   reaches its minimum or the grid ends.
-- **Shrinking** an edge: neighbours that were flush against that edge before
-  the drag started, and whose extent along the edge lies completely within
-  the tile's extent, follow the edge and grow (the edge behaves like a
-  divider). Other neighbours stay, and a gap opens.
+- **Shrinking** an edge moves only that tile. Neighbours stay where they
+  are and the freed cells become a gap. To move the line between two tiles,
+  grow the other one.
 - The tile itself never goes below its minimum.
 - A corner handle applies both of its edges.
 
