@@ -498,48 +498,49 @@ describe("resizeTile growing", () => {
 });
 
 describe("resizeTile shrinking", () => {
-  it("lets a flush neighbour within the extent follow", () => {
+  it("leaves a gap next to a flush neighbour", () => {
     const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 5)];
     const out = resize(l, "a", ["e"], -2, 0);
     expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
-    expect(rect(out, "b")).toEqual([4, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([6, 0, 6, 5]);
   });
-  it("leaves a taller neighbour alone", () => {
-    const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 6, 0, 6, 8)];
-    const out = resize(l, "a", ["e"], -2, 0);
-    expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
-    expect(rect(out, "b")).toEqual([6, 0, 6, 8]);
-  });
-  it("lets several followers follow", () => {
+  it("leaves several flush neighbours alone", () => {
     const l = [
       w("a", "tile", 0, 0, 6, 5),
       w("c", "tile", 6, 0, 6, 2),
       w("d", "tile", 6, 2, 6, 3),
     ];
     const out = resize(l, "a", ["e"], -2, 0);
-    expect(rect(out, "c")).toEqual([4, 0, 8, 2]);
-    expect(rect(out, "d")).toEqual([4, 2, 8, 3]);
+    expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
+    expect(rect(out, "c")).toEqual([6, 0, 6, 2]);
+    expect(rect(out, "d")).toEqual([6, 2, 6, 3]);
   });
   it("never goes below the minimum", () => {
     const out = resize([w("a", "clock", 0, 0, 6, 5)], "a", ["e"], -10, 0);
     expect(rect(out, "a")).toEqual([0, 0, 4, 5]);
   });
-  it("shrinks the west edge and lets the left follower follow", () => {
+  it("shrinks the west edge keeping the far edge, the left neighbour stays", () => {
     const l = [w("b", "tile", 0, 0, 6, 5), w("a", "tile", 6, 0, 6, 5)];
     const out = resize(l, "a", ["w"], 2, 0);
     expect(rect(out, "a")).toEqual([8, 0, 4, 5]);
-    expect(rect(out, "b")).toEqual([0, 0, 8, 5]);
+    expect(rect(out, "b")).toEqual([0, 0, 6, 5]);
   });
-  it("shrinks the south edge and lets the follower below follow", () => {
+  it("shrinks the south edge, the tile below stays", () => {
     const l = [w("a", "tile", 0, 0, 6, 5), w("b", "tile", 0, 5, 6, 5)];
     const out = resize(l, "a", ["s"], 0, -2);
     expect(rect(out, "a")).toEqual([0, 0, 6, 3]);
-    expect(rect(out, "b")).toEqual([0, 3, 6, 7]);
+    expect(rect(out, "b")).toEqual([0, 5, 6, 5]);
+  });
+  it("shrinks the north edge keeping the far edge, the tile above stays", () => {
+    const l = [w("b", "tile", 0, 0, 6, 5), w("a", "tile", 0, 5, 6, 5)];
+    const out = resize(l, "a", ["n"], 0, 2);
+    expect(rect(out, "a")).toEqual([0, 7, 6, 3]);
+    expect(rect(out, "b")).toEqual([0, 0, 6, 5]);
   });
 });
 
 describe("resizeTile corners", () => {
-  it("decides the second edge's followers from the layout after the first", () => {
+  it("shrinks both edges of a corner and moves no neighbour", () => {
     const l = [
       w("a", "tile", 0, 0, 6, 5),
       w("c", "tile", 6, 0, 6, 5),
@@ -547,7 +548,7 @@ describe("resizeTile corners", () => {
     ];
     const out = resize(l, "a", ["s", "e"], -2, -2);
     expect(rect(out, "a")).toEqual([0, 0, 4, 3]);
-    expect(rect(out, "c")).toEqual([4, 0, 8, 5]);
+    expect(rect(out, "c")).toEqual([6, 0, 6, 5]);
     expect(rect(out, "b")).toEqual([0, 5, 6, 5]);
   });
   it("mirrors for west and north", () => {
@@ -558,10 +559,10 @@ describe("resizeTile corners", () => {
     ];
     const out = resize(l, "a", ["w", "n"], 2, 2);
     expect(rect(out, "a")).toEqual([8, 7, 4, 3]);
-    expect(rect(out, "l")).toEqual([0, 5, 8, 5]);
+    expect(rect(out, "l")).toEqual([0, 5, 6, 5]);
     expect(rect(out, "t")).toEqual([6, 0, 6, 5]);
   });
-  it("mixes growing and shrinking", () => {
+  it("mixes growing and shrinking: only the grown edge pushes", () => {
     const l = [
       w("a", "tile", 0, 0, 6, 5),
       w("c", "tile", 6, 0, 6, 5),
@@ -569,7 +570,7 @@ describe("resizeTile corners", () => {
     ];
     const out = resize(l, "a", ["e", "s"], -2, 2);
     expect(rect(out, "a")).toEqual([0, 0, 4, 7]);
-    expect(rect(out, "c")).toEqual([4, 0, 8, 5]);
+    expect(rect(out, "c")).toEqual([6, 0, 6, 5]);
     expect(rect(out, "b")).toEqual([0, 7, 6, 4]);
   });
 });

@@ -472,57 +472,25 @@ function shrinkEdge(
   id: string,
   edge: Edge,
   k: number,
-  followers: ReadonlySet<string>,
 ): SceneWidget[] {
   const { axis, outward } = EDGE[edge]
   const len = lenKey[axis]
   return widgets.map((t) => {
-    if (t.id === id) {
-      return outward > 0
-        ? { ...t, [len]: t[len] - k }
-        : { ...t, [axis]: t[axis] + k, [len]: t[len] - k }
-    }
-    if (!followers.has(t.id)) {
+    if (t.id !== id) {
       return t
     }
     return outward > 0
-      ? { ...t, [axis]: t[axis] - k, [len]: t[len] + k }
-      : { ...t, [len]: t[len] + k }
+      ? { ...t, [len]: t[len] - k }
+      : { ...t, [axis]: t[axis] + k, [len]: t[len] - k }
   })
-}
-
-/** Tiles flush against the edge whose extent along it lies within the tile's. */
-function followersOf(
-  widgets: readonly SceneWidget[],
-  tile: SceneWidget,
-  edge: Edge,
-): Set<string> {
-  const { axis, outward } = EDGE[edge]
-  const cross = crossOf[axis]
-  const [start, end] = extent(tile, axis)
-  const [crossStart, crossEnd] = extent(tile, cross)
-  const line = outward > 0 ? end : start
-  const ids = new Set<string>()
-  for (const other of widgets) {
-    if (other.id === tile.id) {
-      continue
-    }
-    const [o0, o1] = extent(other, axis)
-    const [c0, c1] = extent(other, cross)
-    const flush = outward > 0 ? o0 === line : o1 === line
-    if (flush && c0 >= crossStart && c1 <= crossEnd) {
-      ids.add(other.id)
-    }
-  }
-  return ids
 }
 
 /**
  * Move edges of a tile by the pointer delta (cells, right/down positive),
  * computed from the layout at drag start. Edges are applied in the order e, w, s, n, each
- * deciding pushes and followers from the layout the previous edge left.
+ * deciding pushes from the layout the previous edge left.
  * Never returns an invalid layout (falls back to the input). Growing shrinks the tiles in the
- * way down to their minimum; shrinking lets flush neighbours follow.
+ * way down to their minimum; shrinking moves only this tile and leaves the freed cells empty.
  */
 export function resizeTile(
   widgets: readonly SceneWidget[],
@@ -553,7 +521,7 @@ export function resizeTile(
       const minLen = horizontal ? min.minW : min.minH
       const k = Math.min(-growth, tile[lenKey[axis]] - minLen)
       if (k > 0) {
-        current = shrinkEdge(current, id, edge, k, followersOf(current, tile, edge))
+        current = shrinkEdge(current, id, edge, k)
       }
     }
   }
